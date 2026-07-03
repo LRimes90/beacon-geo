@@ -1,0 +1,16 @@
+# dipendenze e build (rigenerabili con npm install / next build)
+node_modules/
+web/node_modules/
+web/.next/
+web/out/
+
+# output generati dal tool
+beacon-results.json
+*.pdf
+
+# artefatti locali / OS
+.playwright-mcp/
+*.log
+.DS_Store
+.env
+.env.*

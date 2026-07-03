@@ -1,0 +1,8 @@
+{
+  "_comment": "Profilo BEACON: file-agenti valorizzati (0.20) per premiare i siti pronti agli agenti AI (llms.txt, mcp.json, WebMCP). Deriva dai pesi tarati su Pharos (RMSE 0.24) alzando agentFiles da 0.14 e riducendo access/readability. Per replicare esattamente Pharos: agentFiles 0.14, access 0.26, readability 0.26.",
+  "access": 0.23,
+  "agentFiles": 0.20,
+  "structured": 0.24,
+  "readability": 0.23,
+  "offsite": 0.10
+}

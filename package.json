@@ -1,0 +1,22 @@
+{
+  "name": "beacon-geo",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Beacon — GEO / AI-readiness checker. Motore di analisi (MVP, zero dipendenze).",
+  "bin": { "beacon": "./audit.js" },
+  "exports": {
+    "./audit": "./audit.js",
+    "./crawl": "./crawl.js",
+    "./analyzers": "./src/analyzers.js",
+    "./report": "./src/report.js",
+    "./llmstxt": "./src/llmstxt.js"
+  },
+  "scripts": {
+    "test": "node test.js",
+    "audit": "node audit.js",
+    "crawl": "node crawl.js",
+    "batch": "node batch.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
