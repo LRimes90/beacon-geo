@@ -6,7 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { fetchText, head, parseRobots, AI_CRAWLERS, LIVE_UA, BROWSER_UA } from './src/lib.js';
+import { fetchText, head, parseRobots, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
 import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeOffsite, analyzeRights, CATEGORY_LABELS } from './src/analyzers.js';
 import { generateLlmsTxt } from './src/llmstxt.js';
 import { renderHtml, htmlToPdf } from './src/render.js';
@@ -82,7 +82,13 @@ export async function audit(rawUrl, { renderJs = false } = {}) {
   for (const k of Object.keys(CATEGORY_LABELS)) { total += results[k].score * weights[k]; wsum += weights[k]; }
   const overall = Math.round(total / wsum);
 
-  return { url, host, fetchedOk: page.ok, overall, categories: results, rights, files, html, render: { active: renderJs, ok: render.ok, reason: render.reason } };
+  // avviso quando il risultato rischia di essere fuorviante (non un errore: l'analisi c'è comunque)
+  const words = wordCount(html);
+  let notice = null;
+  if (!page.ok) notice = { type: 'unreachable', msg: 'Non sono riuscito a scaricare la pagina (irraggiungibile, timeout o bloccata dal server). Il punteggio potrebbe non essere attendibile.' };
+  else if (words < 60 && !renderJs) notice = { type: 'maybe-spa', msg: 'La pagina serve pochissimo HTML: probabilmente carica i contenuti via JavaScript. Riprova con il rendering JS per un\'analisi accurata.' };
+
+  return { url, host, fetchedOk: page.ok, overall, categories: results, rights, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
 }
 
 async function commonCrawl(host) {

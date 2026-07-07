@@ -18,7 +18,7 @@ const I = {
   shield: <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Zm-2.5 8.5 2 2 3.5-4" />,
 };
 const Icon = ({ k }) => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{I[k]}</svg>
+  <svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{I[k]}</svg>
 );
 
 const FEATURES = [
@@ -49,17 +49,18 @@ export default function Home() {
   const [res, setRes] = useState(null);
   const [err, setErr] = useState('');
 
-  async function run(e) {
-    e.preventDefault();
+  async function analyze(useJs) {
     setLoading(true); setErr(''); setRes(null);
     try {
-      const r = await fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, renderJs }) });
+      const r = await fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, renderJs: useJs }) });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'Errore');
+      if (!r.ok) throw new Error(data.error || 'Analisi fallita — riprova tra poco.');
       setRes(data);
     } catch (e2) { setErr(String(e2.message || e2)); }
     finally { setLoading(false); }
   }
+  function run(e) { e.preventDefault(); analyze(renderJs); }
+  function retryJs() { setRenderJs(true); analyze(true); }
 
   async function downloadLlms() {
     if (!res) return;
@@ -87,7 +88,7 @@ export default function Home() {
       <main className="wrap">
         <div className="hero">
           <div className="kicker">GEO · Generative Engine Optimization</div>
-          <h1>Le AI <span className="hl">leggono</span><br />il tuo sito?</h1>
+          <h1>Le AI <span className="hl">leggono</span> il tuo sito?</h1>
           <p className="lede">Inserisci l'indirizzo: in un attimo scopri cosa trovano i crawler AI, cosa gli sfugge e da dove partire per migliorare.</p>
         </div>
 
@@ -110,6 +111,15 @@ export default function Home() {
                 <button type="button" className="dl" onClick={downloadLlms}>⬇ Genera il tuo llms.txt</button>
               </div>
             </div>
+
+            {res.notice && (
+              <div className={'notice ' + res.notice.type}>
+                <span>{res.notice.msg}</span>
+                {res.notice.type === 'maybe-spa' && !res.render?.ok && (
+                  <button type="button" className="retry" onClick={retryJs} disabled={loading}>Riprova con rendering JS</button>
+                )}
+              </div>
+            )}
 
             <div className="cats">
               {Object.entries(LABELS).map(([k, label]) => {
@@ -151,7 +161,7 @@ export default function Home() {
               <div className={'specrow' + (f.info ? ' info' : '')} key={f.t}>
                 <div className="spec-h">
                   <span className="ic"><Icon k={f.k} /></span>
-                  <h3>{f.t}{f.info && <span className="badge">info</span>}</h3>
+                  <h3>{f.t}{f.info && <span className="badge" aria-hidden="true">info</span>}</h3>
                 </div>
                 <p>{f.d}</p>
               </div>
@@ -162,31 +172,14 @@ export default function Home() {
 
       <footer className="foot">
         <div className="foot-in">
-          <div className="foot-top">
-            <div>
-              <div className="fbrand">Beacon <span className="hl">🔦</span></div>
-              <p className="fdesc">Il linter di AI-readiness open source. Analizza cosa vedono davvero i crawler AI — e come renderti leggibile agli agenti.</p>
-            </div>
-            <div>
-              <h4>Il metodo</h4>
-              <ul>
-                <li><a href="#analizza">Analizza un sito</a></li>
-                <li><a href="#controlli">I 6 controlli</a></li>
-                <li><a href="#analizza">Genera il tuo llms.txt</a></li>
-              </ul>
-            </div>
-            <div>
-              <h4>Open source</h4>
-              <ul>
-                <li><a href="https://github.com/" target="_blank" rel="noreferrer">GitHub</a></li>
-                <li><a href="#">Licenza MIT</a></li>
-                <li><a href="#">Contribuisci</a></li>
-              </ul>
-            </div>
+          <div className="fleft">
+            <div className="fbrand">Beacon <span className="hl">🔦</span></div>
+            <p className="fdesc">Il linter di AI-readiness open source — misura cosa vedono davvero i crawler AI.</p>
           </div>
+          <a className="ghlink" href="https://github.com/LRimes90/beacon-geo" target="_blank" rel="noreferrer"><span className="star">★</span> Codice su GitHub</a>
         </div>
         <div className="foot-bot">
-          <span>© 2026 Beacon · motore open-source</span>
+          <span>© 2026 Beacon · open source</span>
           <span>Un progetto di Luca Rimediotti</span>
         </div>
       </footer>

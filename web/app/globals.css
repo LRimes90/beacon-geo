@@ -1,6 +1,6 @@
 :root{
   --bg:#0A1E1C; --card:rgba(255,255,255,.045); --card-line:rgba(255,255,255,.09);
-  --ink:#EAF3F1; --muted:#93AAA6; --faint:#5F7773;
+  --ink:#EAF3F1; --muted:#9DB4B0; --faint:#7E9894;
   --beam:#E8B15A; --accent:#42D1C8;
   --good:#4FC98A; --warn:#E8B15A; --mid:#E8934A; --crit:#F0664B;
   --serif:Georgia,'Iowan Old Style',serif;
@@ -8,6 +8,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 body{
   background:var(--bg); color:var(--ink);
   font-family:system-ui,-apple-system,'Segoe UI',sans-serif; line-height:1.6;
@@ -38,13 +39,13 @@ body::before{
 .ghlink .star{color:var(--beam)}
 
 .wrap{position:relative; z-index:1; max-width:920px; margin:0 auto; padding:56px 22px 40px}
-.hero{max-width:620px}
+.hero{max-width:900px}
 .kicker{display:flex; align-items:center; gap:9px; font:600 12px/1 var(--mono); letter-spacing:.13em; text-transform:uppercase; color:var(--accent)}
 h1{font:700 clamp(34px,6vw,56px)/1.06 var(--serif); letter-spacing:-.02em; margin:.3em 0 .28em; text-wrap:balance}
 h1 .hl{color:var(--beam)}
 .lede{color:var(--muted); font-size:1.12rem; max-width:52ch}
 
-form{display:flex; gap:10px; margin:34px 0 10px; flex-wrap:wrap; max-width:620px}
+form{display:flex; gap:10px; margin:34px 0 10px; flex-wrap:wrap}
 input[type=text]{flex:1; min-width:230px; padding:15px 18px; font-size:16px; color:var(--ink);
   background:var(--card); border:1px solid var(--card-line); border-radius:13px}
 input[type=text]::placeholder{color:var(--faint)}
@@ -56,6 +57,11 @@ button.go:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
 .opt{display:inline-flex; align-items:center; gap:8px; font-size:13.5px; color:var(--muted); cursor:pointer}
 .opt input{accent-color:var(--accent); width:16px; height:16px}
 .err{margin-top:16px; color:var(--crit); font-size:14px}
+.notice{margin-top:18px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;
+  background:rgba(232,177,90,.08);border:1px solid rgba(232,177,90,.30);border-radius:12px;padding:13px 16px;font-size:13.5px;color:#F0D9AE}
+.notice .retry{font:600 13px var(--mono);color:#062018;background:var(--beam);border:0;border-radius:9px;padding:8px 13px;cursor:pointer}
+.notice .retry:hover{filter:brightness(1.06)}
+.notice .retry:disabled{opacity:.5;cursor:progress}
 
 /* ---------- RISULTATI ---------- */
 .result{margin-top:40px; animation:rise .5s cubic-bezier(.2,.7,.2,1) both}
@@ -109,19 +115,19 @@ button.go:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
 .spec-h .badge{margin-left:9px;font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);
   border:1px solid var(--card-line);border-radius:999px;padding:3px 8px;vertical-align:middle;white-space:nowrap}
 
-/* ---------- FOOTER ---------- */
-.foot{position:relative;z-index:1;border-top:1px solid var(--card-line);margin-top:72px}
-.foot-in{max-width:920px;margin:0 auto;padding:44px 22px}
-.foot-top{display:grid;gap:28px;grid-template-columns:1fr}
-@media(min-width:640px){.foot-top{grid-template-columns:2fr 1fr 1fr}}
-.foot h4{font:600 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin:0 0 14px}
-.foot .fbrand{font:700 18px var(--serif)} .foot .fbrand .hl{color:var(--beam)}
-.foot .fdesc{color:var(--muted);font-size:14px;max-width:34ch;margin:.6em 0 0}
-.foot ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
-.foot a{color:var(--muted);text-decoration:none;font-size:14px} .foot a:hover{color:var(--ink)}
-.foot-bot{max-width:920px;margin:0 auto;padding:18px 22px 56px;border-top:1px solid var(--card-line);
+/* ---------- FOOTER (minimale) ---------- */
+.foot{position:relative;z-index:1;border-top:1px solid var(--card-line);margin-top:80px}
+.foot-in{max-width:920px;margin:0 auto;padding:40px 22px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:18px 28px}
+.foot .fbrand{font:700 20px var(--serif)} .foot .fbrand .hl{color:var(--beam)}
+.foot .fdesc{color:var(--muted);font-size:14px;max-width:40ch;margin:.5em 0 0}
+.foot-bot{max-width:920px;margin:0 auto;padding:16px 22px 56px;border-top:1px solid var(--card-line);
   display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;color:var(--faint);font-size:12.5px}
 
+@media (max-width:480px){
+  .bar-in{padding:12px 16px}
+  .brand .tag{display:none}
+  .ghlink{white-space:nowrap}
+}
 @media (prefers-reduced-motion: reduce){
   body::before,.brand .dot{animation:none}
   .result{animation:none} .gauge .fill,.bar i,.fcard{transition:none}
