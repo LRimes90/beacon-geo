@@ -89,7 +89,7 @@ button.go:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
 .rights .info{font-size:12px;color:var(--faint);font-weight:400;text-transform:none;letter-spacing:0}
 .rights ul{margin:12px 0 0;padding:0;list-style:none;display:grid;gap:8px}
 .rights li{display:flex;gap:9px;font-size:13.5px;color:var(--muted)}
-.rights .pin{color:var(--good)} .rights .pn{color:var(--faint)}
+.rights .pin{color:var(--good)} .rights .pn{color:var(--faint)} .rights .pc{color:var(--crit)}
 .fixes{margin-top:22px;background:var(--card);border:1px solid var(--card-line);border-radius:16px;padding:20px 22px}
 .fixes h3{font:600 16px var(--serif);margin:0 0 12px;color:var(--beam)}
 .fixes ul{margin:0;padding:0;list-style:none;display:grid;gap:10px}

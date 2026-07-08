@@ -171,3 +171,23 @@ export function analyzeRights({ tdmrep, license, contentSignal }) {
   };
 }
 export const RIGHTS_LABEL = 'Segnali e diritti AI';
+
+// ⑦ FONDAMENTALI TECNICI — informativo ma con allarmi forti (noindex/HTTPS bloccano la visibilità).
+export function analyzeTech({ https, noindex, viewport, statusOk }) {
+  const checks = [
+    { name: 'HTTPS', status: https ? 'good' : 'crit',
+      detail: https ? 'servito su HTTPS' : 'la pagina non è su HTTPS',
+      fix: https ? null : 'Servi il sito su HTTPS (certificato TLS)' },
+    { name: 'Indicizzabilità (meta robots)', status: noindex ? 'crit' : 'good',
+      detail: noindex ? 'la pagina è "noindex": esclusa da motori e AI' : 'indicizzabile',
+      fix: noindex ? 'Rimuovi "noindex" dal meta robots se vuoi essere trovato' : null },
+    { name: 'Viewport mobile', status: viewport ? 'good' : 'warn',
+      detail: viewport ? 'meta viewport presente' : 'manca il meta viewport',
+      fix: viewport ? null : 'Aggiungi <meta name="viewport" content="width=device-width, initial-scale=1">' },
+    { name: 'Risposta del server', status: statusOk ? 'good' : 'crit',
+      detail: statusOk ? 'HTTP 200 OK' : 'la pagina non risponde correttamente (non 2xx)' },
+  ];
+  const good = checks.filter((c) => c.status === 'good').length;
+  return { informational: true, score: clamp(pct(good, 4)), checks };
+}
+export const TECH_LABEL = 'Fondamentali tecnici';

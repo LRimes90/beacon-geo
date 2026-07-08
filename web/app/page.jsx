@@ -16,6 +16,7 @@ const I = {
   lines: <path d="M4 6h16M4 12h12M4 18h8" />,
   link: <path d="M9 15l6-6M10 6l1-1a4 4 0 0 1 6 6l-1 1M14 18l-1 1a4 4 0 0 1-6-6l1-1" />,
   shield: <path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3Zm-2.5 8.5 2 2 3.5-4" />,
+  gear: <><circle cx="12" cy="12" r="3.2" /><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2.1 2.1M16.9 16.9 19 19M19 5l-2.1 2.1M7.1 16.9 5 19" /></>,
 };
 const Icon = ({ k }) => (
   <svg aria-hidden="true" focusable="false" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{I[k]}</svg>
@@ -28,6 +29,7 @@ const FEATURES = [
   { k: 'lines', t: 'Leggibilità macchina', d: 'quanto testo vede una macchina nell\'HTML servito, il peso della semantica, la gerarchia dei titoli e gli alt — con e senza JavaScript.' },
   { k: 'link', t: 'Visibilità off-site', d: 'accesso a CCBot e presenza in Common Crawl, il dataset su cui molti modelli si sono addestrati.' },
   { k: 'shield', t: 'Segnali e diritti AI', d: 'TDMRep, licenze RSL e Content-Signal: cosa dichiari alle AI su uso e addestramento. Lo mostriamo, non lo pesiamo.', info: true },
+  { k: 'gear', t: 'Fondamentali tecnici', d: 'HTTPS, indicizzabilità (meta robots noindex), viewport mobile e risposta del server: le basi che, se mancano, azzerano tutto il resto.', info: true },
 ];
 
 function Gauge({ score }) {
@@ -133,6 +135,17 @@ export default function Home() {
               })}
             </div>
 
+            {res.tech && (
+              <div className="rights">
+                <div className="rt">Fondamentali tecnici <span className="info">— informativo, non incide sul punteggio</span></div>
+                <ul>
+                  {res.tech.checks.map((c, i) => (
+                    <li key={i}><span className={c.status === 'good' ? 'pin' : c.status === 'crit' ? 'pc' : 'pn'}>{c.status === 'good' ? '✓' : c.status === 'crit' ? '✕' : '○'}</span> {c.name} — {c.detail}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {res.rights && (
               <div className="rights">
                 <div className="rt">Segnali e diritti AI <span className="info">— informativo, non incide sul punteggio</span></div>
@@ -155,7 +168,7 @@ export default function Home() {
 
         <section className="features" id="controlli">
           <div className="kicker">Cosa controlliamo</div>
-          <p className="fintro">Cinque categorie fanno il punteggio, la sesta è informativa. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.</p>
+          <p className="fintro">Cinque categorie fanno il punteggio; le ultime due sono controlli informativi. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.</p>
           <div className="speclist">
             {FEATURES.map((f) => (
               <div className={'specrow' + (f.info ? ' info' : '')} key={f.t}>

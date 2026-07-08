@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { fetchText, head, parseRobots, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
-import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeOffsite, analyzeRights, CATEGORY_LABELS } from './src/analyzers.js';
+import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeOffsite, analyzeRights, analyzeTech, CATEGORY_LABELS } from './src/analyzers.js';
 import { generateLlmsTxt } from './src/llmstxt.js';
 import { renderHtml, htmlToPdf } from './src/render.js';
 import { toMarkdown, toHtml } from './src/report.js';
@@ -82,13 +82,23 @@ export async function audit(rawUrl, { renderJs = false } = {}) {
   for (const k of Object.keys(CATEGORY_LABELS)) { total += results[k].score * weights[k]; wsum += weights[k]; }
   const overall = Math.round(total / wsum);
 
+  // fondamentali tecnici (informativo, con allarmi forti)
+  const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html) || /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots/i.test(html);
+  const tech = analyzeTech({
+    https: (page.finalUrl || url).startsWith('https://'),
+    noindex,
+    viewport: /<meta[^>]+name=["']viewport["']/i.test(html),
+    statusOk: page.ok,
+  });
+
   // avviso quando il risultato rischia di essere fuorviante (non un errore: l'analisi c'è comunque)
   const words = wordCount(html);
   let notice = null;
   if (!page.ok) notice = { type: 'unreachable', msg: 'Non sono riuscito a scaricare la pagina (irraggiungibile, timeout o bloccata dal server). Il punteggio potrebbe non essere attendibile.' };
+  else if (noindex) notice = { type: 'noindex', msg: 'La pagina è impostata su "noindex": chiede a motori e AI di NON indicizzarla. Se vuoi essere trovato, rimuovi il noindex.' };
   else if (words < 60 && !renderJs) notice = { type: 'maybe-spa', msg: 'La pagina serve pochissimo HTML: probabilmente carica i contenuti via JavaScript. Riprova con il rendering JS per un\'analisi accurata.' };
 
-  return { url, host, fetchedOk: page.ok, overall, categories: results, rights, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
+  return { url, host, fetchedOk: page.ok, overall, categories: results, rights, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
 }
 
 async function commonCrawl(host) {

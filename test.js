@@ -2,7 +2,7 @@
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
 import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt } from './src/lib.js';
-import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights } from './src/analyzers.js';
+import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech } from './src/analyzers.js';
 import { renderHtml } from './src/render.js';
 import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
@@ -72,6 +72,13 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const r = analyzeRights({ tdmrep: true, license: false, contentSignal: false });
   ok(r.informational === true, 'rights: informativo (non pesato)');
   ok(r.checks.length === 3 && r.score === 33, 'rights: 3 segnali, 1/3 presente = 33');
+}
+{
+  const t = analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true });
+  ok(t.informational === true && t.score === 100, 'tech: tutto ok = 100');
+  const bad = analyzeTech({ https: false, noindex: true, viewport: false, statusOk: false });
+  ok(bad.score === 0, 'tech: tutto problematico = 0');
+  ok(bad.checks.find((c) => c.name.startsWith('Indicizz')).status === 'crit', 'tech: noindex è critico');
 }
 
 // render.js — fallback graceful quando Playwright non è installato (deve NON lanciare)
