@@ -3,6 +3,10 @@
 import assert from 'node:assert/strict';
 import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech } from './src/analyzers.js';
+import { analyzeA11y, summarizeAxe } from './src/a11y.js';
+import { summarizePsi } from './src/perf.js';
+import { generateStatement } from './src/statement.js';
+import { remedyFor, REMEDIATION } from './src/remediation.js';
 import { renderHtml } from './src/render.js';
 import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
@@ -81,10 +85,82 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(bad.checks.find((c) => c.name.startsWith('Indicizz')).status === 'crit', 'tech: noindex è critico');
 }
 
-// render.js — fallback graceful quando Playwright non è installato (deve NON lanciare)
+// a11y.js — modulo accessibilità (companion): check statici deterministici.
+// NB: il conteggio etichette form dipende da accessibleFormLabels (TODO human) → qui HTML senza form.
 {
-  const r = await renderHtml('https://example.com');
-  ok(r.ok === false && /playwright/i.test(r.reason), 'render: fallback graceful senza playwright');
+  const good = analyzeA11y('<html lang="it"><head><title>Pagina di prova</title><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><h1>Uno</h1><h2>Due</h2><img src="a" alt="descrizione"></body></html>');
+  ok(good.checks.length === 7, 'a11y: 7 check');
+  ok(good.checks[good.checks.length - 1].status === 'info', 'a11y: il contrasto è informativo (non pesato)');
+  ok(good.score === 100, 'a11y: pagina pulita senza form → 100: ' + good.score);
+
+  const bad = analyzeA11y('<html><head></head><body><h3>Salto di livello</h3><img src="a"><meta name="viewport" content="user-scalable=no"></body></html>');
+  ok(bad.checks.find((c) => c.name.startsWith('Lingua')).status === 'crit', 'a11y: manca lang → crit');
+  ok(bad.checks.find((c) => c.name.startsWith('Zoom')).status === 'crit', 'a11y: zoom bloccato → crit');
+  ok(bad.score < 40, 'a11y: pagina problematica → score basso: ' + bad.score);
+
+  // summarizeAxe — mappatura pura dei risultati grezzi axe-core
+  const axe = summarizeAxe({
+    violations: [
+      { id: 'color-contrast', impact: 'serious', help: 'Contrasto insufficiente', helpUrl: 'https://x', nodes: [{ target: ['.a'] }, { target: ['.b'] }] },
+      { id: 'region', impact: 'moderate', help: 'Contenuto fuori dai landmark', helpUrl: 'https://y', nodes: [{ target: ['div'] }] },
+    ],
+    passes: [{}, {}, {}], incomplete: [{}],
+  });
+  ok(axe.counts.violations === 2 && axe.counts.passes === 3 && axe.counts.incomplete === 1, 'axe: conteggi corretti');
+  ok(axe.findings[0].status === 'crit' && axe.findings[0].nodes === 2, 'axe: serious→crit in cima, con conteggio nodi');
+  ok(axe.findings[0].id === 'color-contrast' && axe.findings[0].remedy && axe.findings[0].remedy.after, 'axe: finding arricchito con remedy mappata');
+}
+
+// remediation.js — mappa no-AI + fallback su axe
+{
+  ok(REMEDIATION['image-alt'].after.includes('alt='), 'remediation: image-alt ha esempio con alt');
+  ok(remedyFor({ id: 'label' }).after.includes('<label'), 'remediation: label mappata (prima→dopo)');
+  const fb = remedyFor({ id: 'aria-qualcosa-non-mappata', help: 'Sistema questo ARIA', sampleHtml: '<div role="x">' });
+  ok(fb.after === null && /Sistema questo ARIA/.test(fb.why) && fb.before === '<div role="x">', 'remediation: fallback usa help+HTML di axe');
+}
+
+// perf.js — summarizePsi: mappatura pura del JSON PageSpeed Insights
+{
+  const s = summarizePsi({
+    lighthouseResult: {
+      categories: { performance: { score: 0.92 } },
+      audits: {
+        'largest-contentful-paint': { numericValue: 2100, displayValue: '2.1 s' },
+        'cumulative-layout-shift': { numericValue: 0.3, displayValue: '0.3' },
+        'total-blocking-time': { numericValue: 150, displayValue: '150 ms' },
+        'unused-css-rules': { title: 'Rimuovi CSS inutilizzato', details: { type: 'opportunity', overallSavingsMs: 800 } },
+      },
+    },
+    loadingExperience: { overall_category: 'FAST' },
+  });
+  ok(s.score === 92, 'psi: score = 92 (Lighthouse >90 → verde): ' + s.score);
+  ok(s.metrics.find((m) => m.id === 'largest-contentful-paint').status === 'good', 'psi: LCP 2.1s → good');
+  ok(s.metrics.find((m) => m.id === 'cumulative-layout-shift').status === 'crit', 'psi: CLS 0.3 → crit');
+  ok(s.opportunities[0].savingsMs === 800, 'psi: opportunità estratta e ordinata');
+  ok(s.field && s.field.category === 'FAST', 'psi: dato reale utenti (CrUX)');
+  ok(summarizePsi({}) === null, 'psi: JSON senza lighthouseResult → null');
+}
+
+// statement.js — bozza dichiarazione di accessibilità (pura, onesta)
+{
+  const md = generateStatement(
+    { host: 'x.com', url: 'https://x.com/', result: { checks: [{ name: 'Lingua della pagina (lang)', status: 'crit', fix: 'Dichiara la lingua' }] }, axe: { ok: true, findings: [{ help: 'Contrasto insufficiente', impact: 'serious', nodes: 3 }] } },
+    { org: 'Acme', contact: 'a@x.com', date: '2026-07-09' },
+  );
+  ok(md.startsWith('# Dichiarazione di accessibilità'), 'statement: titolo');
+  ok(md.includes('parzialmente conforme'), 'statement: stato dedotto dalle criticità');
+  ok(md.includes('Contrasto insufficiente') && md.includes('Lingua della pagina'), 'statement: include criticità statiche + axe');
+  ok(/non è una certificazione/i.test(md) && md.includes('Acme') && md.includes('a@x.com'), 'statement: disclaimer + org + contatto');
+  // onestà: scan pulito NON deve dichiarare conformità
+  const clean = generateStatement({ host: 'y.com', result: { checks: [] }, axe: { ok: true, findings: [] } }, {});
+  ok(/DA VERIFICARE/.test(clean), 'statement: scan pulito NON dichiara la conformità');
+}
+
+// render.js — contratto graceful: qualunque fallimento ritorna {ok:false, reason} senza lanciare.
+// (porta chiusa → il goto fallisce; con o senza playwright installato il risultato è sempre well-formed)
+{
+  const r = await renderHtml('http://127.0.0.1:9/', { timeout: 4000 });
+  ok(r.ok === false && typeof r.reason === 'string', 'render: fallback graceful (ritorna {ok:false}, non lancia)');
 }
 
 // crawl.js — discovery pagine (funzioni pure)

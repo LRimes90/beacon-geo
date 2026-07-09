@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import ToolNav from './nav';
 
 const LABELS = {
   access: 'Accesso AI', agentFiles: 'File per agenti e AI', structured: 'Dati strutturati e SEO',
@@ -80,12 +81,7 @@ export default function Home() {
 
   return (
     <>
-      <header className="topbar">
-        <div className="bar-in">
-          <div className="brand"><span className="dot" />Beacon<span className="tag">AI-readiness</span></div>
-          <a className="ghlink" href="https://github.com/" target="_blank" rel="noreferrer"><span className="star">★</span> open source</a>
-        </div>
-      </header>
+      <ToolNav active="geo" tag="AI-readiness" />
 
       <main className="wrap">
         <div className="hero">
