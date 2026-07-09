@@ -49,6 +49,24 @@ export async function runAxe(url, { timeout = 25000, ua } = {}) {
   }
 }
 
+// Come htmlToPdf ma ritorna i BYTE del PDF (per gli endpoint web, niente file su disco).
+export async function renderPdfBuffer(html, { format = 'A4' } = {}) {
+  let pw;
+  try { pw = await import(/* webpackIgnore: true */ 'playwright'); } catch { return { ok: false, reason: 'playwright non installato' }; }
+  let browser;
+  try {
+    browser = await pw.chromium.launch({ headless: true });
+    const page = await (await browser.newContext()).newPage();
+    await page.setContent(html, { waitUntil: 'load' });
+    const buffer = await page.pdf({ format, printBackground: true });
+    return { ok: true, buffer };
+  } catch (e) {
+    return { ok: false, reason: String(e).slice(0, 100) };
+  } finally {
+    if (browser) await browser.close();
+  }
+}
+
 // Converte HTML in PDF (opzionale, via Playwright). Fallback graceful come renderHtml.
 export async function htmlToPdf(html, outPath, { format = 'A4' } = {}) {
   let pw;

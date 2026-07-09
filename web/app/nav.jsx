@@ -4,6 +4,7 @@ const TOOLS = [
   { href: '/', key: 'geo', label: 'GEO checker' },
   { href: '/a11y', key: 'a11y', label: 'Accessibilità' },
   { href: '/perf', key: 'perf', label: 'Performance' },
+  { href: '/report', key: 'report', label: 'Report completo' },
 ];
 
 export default function ToolNav({ active, tag }) {

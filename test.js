@@ -7,6 +7,7 @@ import { analyzeA11y, summarizeAxe } from './src/a11y.js';
 import { summarizePsi } from './src/perf.js';
 import { generateStatement } from './src/statement.js';
 import { remedyFor, REMEDIATION } from './src/remediation.js';
+import { toHtmlSuite, toMarkdownSuite } from './src/suiteReport.js';
 import { renderHtml } from './src/render.js';
 import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
@@ -117,6 +118,29 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(remedyFor({ id: 'label' }).after.includes('<label'), 'remediation: label mappata (prima→dopo)');
   const fb = remedyFor({ id: 'aria-qualcosa-non-mappata', help: 'Sistema questo ARIA', sampleHtml: '<div role="x">' });
   ok(fb.after === null && /Sistema questo ARIA/.test(fb.why) && fb.before === '<div role="x">', 'remediation: fallback usa help+HTML di axe');
+}
+
+// suiteReport.js — report combinato GEO+a11y+perf (funzioni pure)
+{
+  const suite = {
+    url: 'https://x.com/', host: 'x.com',
+    geo: { host: 'x.com', url: 'https://x.com/', overall: 72, categories: {
+      access: { score: 100, checks: [] }, agentFiles: { score: 60, checks: [{ fix: 'aggiungi llms.txt' }] },
+      structured: { score: 80, checks: [] }, readability: { score: 50, checks: [] }, offsite: { score: 100, checks: [] },
+    } },
+    a11y: { result: { score: 67, checks: [{ name: 'Lingua della pagina (lang)', status: 'crit', detail: 'manca', fix: 'aggiungi lang' }] },
+      axe: { ok: true, counts: { violations: 1, passes: 5, incomplete: 0 }, findings: [{ id: 'image-alt', status: 'crit', impact: 'critical', help: 'Le immagini devono avere alt', helpUrl: 'https://x', nodes: 3, failureSummary: 'Fix: add alt', remedy: { why: 'perché', before: '<img src="a">', after: '<img src="a" alt="x">' } }] } },
+    perf: { ok: true, strategy: 'mobile', result: { score: 91, metrics: [{ name: 'LCP', status: 'good', detail: '2.1 s' }], opportunities: [{ title: 'Comprimi immagini', savingsMs: 1200 }], field: { category: 'FAST' } } },
+  };
+  const html = toHtmlSuite(suite, { date: '2026-07-09' });
+  ok(html.startsWith('<!doctype html>') && html.includes('x.com'), 'suite html: documento valido');
+  ok(html.includes('72') && html.includes('67') && html.includes('91'), 'suite html: i 3 punteggi presenti');
+  ok(html.includes('&lt;img') && !html.includes('<img src="a">'), 'suite html: HTML del sito ESCAPATO (confine di fiducia)');
+  const md = toMarkdownSuite(suite, { date: '2026-07-09' });
+  ok(md.includes('## GEO') && md.includes('## Accessibilità') && md.includes('## Performance'), 'suite md: 3 sezioni');
+  // degrado: perf non disponibile (chiave PSI mancante) → non deve rompere
+  const partial = toHtmlSuite({ url: 'https://y.com/', host: 'y.com', geo: { ...suite.geo, host: 'y.com' }, a11y: suite.a11y, perf: { ok: false, reason: 'quota' } }, {});
+  ok(partial.includes('chiave PSI mancante'), 'suite html: performance assente degrada con nota');
 }
 
 // perf.js — summarizePsi: mappatura pura del JSON PageSpeed Insights
