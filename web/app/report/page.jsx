@@ -5,6 +5,15 @@ import ToolNav from '../nav';
 const col = (s) => (s >= 80 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : s >= 40 ? 'var(--mid)' : 'var(--crit)');
 const colPerf = (s) => (s >= 90 ? 'var(--good)' : s >= 50 ? 'var(--warn)' : 'var(--crit)');
 
+// delta before-after: per i punteggi positivo=meglio; per le violazioni axe (invert) negativo=meglio
+function DeltaRow({ label, d, invert }) {
+  if (typeof d !== 'number') return null;
+  const same = d === 0;
+  const better = invert ? d < 0 : d > 0;
+  const c = same ? 'var(--muted)' : better ? 'var(--good)' : 'var(--crit)';
+  return <li style={{ color: 'var(--muted)' }}><span style={{ color: c }}>{same ? '=' : better ? '▲' : '▼'}</span> {label}: <b style={{ color: c }}>{d > 0 ? '+' : ''}{d}</b></li>;
+}
+
 function Card({ label, score, sub, c }) {
   return (
     <div style={{ flex: 1, minWidth: 150, background: 'var(--card)', border: '1px solid var(--card-line)', borderRadius: 14, padding: '18px 20px' }}>
@@ -86,6 +95,18 @@ export default function Report() {
             <div className="notice" style={{ marginTop: 18 }}>
               <span>I tre punteggi <strong>non si sommano</strong>: misurano dimensioni diverse. Il report li presenta affiancati con il dettaglio dei fix.</span>
             </div>
+
+            {res.history?.previous && res.history.delta && (
+              <div className="rights" style={{ marginTop: 18 }}>
+                <div className="rt">Rispetto alla scansione precedente <span className="info">— {new Date(res.history.previous.ts).toLocaleDateString('it-CH')} · {res.history.count} scansioni totali</span></div>
+                <ul>
+                  <DeltaRow label="GEO" d={res.history.delta.geo} />
+                  <DeltaRow label="Accessibilità" d={res.history.delta.a11y} />
+                  <DeltaRow label="Performance" d={res.history.delta.perf} />
+                  <DeltaRow label="Violazioni axe" d={res.history.delta.axe} invert />
+                </ul>
+              </div>
+            )}
 
             <div style={{ marginTop: 20, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <button type="button" className="dl" onClick={() => download('pdf')} disabled={busy === 'pdf'}>{busy === 'pdf' ? 'Genero…' : '⬇ Report PDF'}</button>

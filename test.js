@@ -8,6 +8,7 @@ import { summarizePsi } from './src/perf.js';
 import { generateStatement } from './src/statement.js';
 import { remedyFor, REMEDIATION } from './src/remediation.js';
 import { toHtmlSuite, toMarkdownSuite } from './src/suiteReport.js';
+import { snapshot, diff } from './src/history.js';
 import { renderHtml } from './src/render.js';
 import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
@@ -141,6 +142,18 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // degrado: perf non disponibile (chiave PSI mancante) → non deve rompere
   const partial = toHtmlSuite({ url: 'https://y.com/', host: 'y.com', geo: { ...suite.geo, host: 'y.com' }, a11y: suite.a11y, perf: { ok: false, reason: 'quota' } }, {});
   ok(partial.includes('chiave PSI mancante'), 'suite html: performance assente degrada con nota');
+}
+
+// history.js — snapshot + diff (before-after, pure)
+{
+  const suite = { host: 'x.com', url: 'https://x.com/', geo: { overall: 80 }, a11y: { result: { score: 60 }, axe: { ok: true, counts: { violations: 3 } } }, perf: { ok: true, result: { score: 90 } } };
+  const s = snapshot(suite, '2026-07-09T00:00:00Z');
+  ok(s.geo === 80 && s.a11y === 60 && s.axe === 3 && s.perf === 90, 'history: snapshot estrae i punteggi');
+  ok(diff(null, s) === null, 'history: nessun precedente → diff null');
+  const d = diff({ geo: 70, a11y: 50, axe: 8, perf: 85 }, s);
+  ok(d.geo === 10 && d.a11y === 10 && d.perf === 5 && d.axe === -5, 'history: delta corretti (axe -5 = meno violazioni = meglio)');
+  const s2 = snapshot({ host: 'y.com', geo: { error: 'x' }, a11y: { result: { score: 40 } } }, 't');
+  ok(s2.geo === null && s2.a11y === 40 && s2.perf === null, 'history: campi mancanti/errore → null');
 }
 
 // perf.js — summarizePsi: mappatura pura del JSON PageSpeed Insights

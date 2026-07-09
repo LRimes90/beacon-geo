@@ -177,13 +177,23 @@ export default function Home() {
             ))}
           </div>
         </section>
+
+        <section className="features" id="suite" style={{ marginTop: 44 }}>
+          <div className="kicker">La suite Beacon</div>
+          <p className="fintro">Non solo GEO. Beacon controlla anche l'accessibilità (WCAG/EAA) e la performance, e le unisce in un report unico pronto per il cliente.</p>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <a className="dl" href="/a11y">Accessibilità · WCAG/EAA →</a>
+            <a className="dl" href="/perf">Performance · Lighthouse →</a>
+            <a className="dl" href="/report">Report completo →</a>
+          </div>
+        </section>
       </main>
 
       <footer className="foot">
         <div className="foot-in">
           <div className="fleft">
             <div className="fbrand">Beacon <span className="hl">🔦</span></div>
-            <p className="fdesc">Il linter di AI-readiness open source — misura cosa vedono davvero i crawler AI.</p>
+            <p className="fdesc">Suite gratuita che misura cosa vedono del tuo sito le AI, gli screen reader e i motori: GEO, accessibilità (WCAG/EAA) e performance.</p>
           </div>
           <a className="ghlink" href="https://github.com/LRimes90/beacon-geo" target="_blank" rel="noreferrer"><span className="star">★</span> Codice su GitHub</a>
         </div>

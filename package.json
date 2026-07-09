@@ -15,6 +15,7 @@
     "./statement": "./src/statement.js",
     "./suite": "./src/suite.js",
     "./suite-report": "./src/suiteReport.js",
+    "./history": "./src/history.js",
     "./render": "./src/render.js",
     "./report": "./src/report.js",
     "./llmstxt": "./src/llmstxt.js"

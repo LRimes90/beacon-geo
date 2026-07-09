@@ -8,6 +8,9 @@ web/out/
 beacon-results.json
 *.pdf
 
+# storico scansioni (dati locali, non versionati)
+.beacon-history/
+
 # artefatti locali / OS
 .playwright-mcp/
 *.log
