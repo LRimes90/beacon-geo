@@ -180,6 +180,12 @@ button.go:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
 .back-to-top.visible{opacity:1;visibility:visible;transform:translateY(0) scale(1)}
 .back-to-top:hover{background:var(--beam);color:var(--bg);transform:translateY(-4px) scale(1.05)}
 .back-to-top svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2}
+/* Mobile: bottone più compatto e footer con aria in fondo, così il pulsante
+   non copre la riga © / link legali quando si è a fine pagina. */
+@media (max-width:640px){
+  .back-to-top{width:44px;height:44px;bottom:16px;right:16px}
+  .foot-bot{padding-bottom:96px}
+}
 
 @media (max-width:480px){
   .bar-in{padding:12px 16px}
