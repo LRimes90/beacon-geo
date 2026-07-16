@@ -16,6 +16,7 @@
     "./suite": "./src/suite.js",
     "./suite-report": "./src/suiteReport.js",
     "./history": "./src/history.js",
+    "./guard": "./src/guard.js",
     "./render": "./src/render.js",
     "./report": "./src/report.js",
     "./llmstxt": "./src/llmstxt.js"

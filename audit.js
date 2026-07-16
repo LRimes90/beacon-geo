@@ -11,6 +11,7 @@ import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability
 import { generateLlmsTxt } from './src/llmstxt.js';
 import { renderHtml, htmlToPdf } from './src/render.js';
 import { toMarkdown, toHtml } from './src/report.js';
+import WEIGHTS from './weights.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -77,7 +78,7 @@ export async function audit(rawUrl, { renderJs = false } = {}) {
   };
 
   // 7) punteggio complessivo pesato
-  const weights = JSON.parse(await readFile(join(__dir, 'weights.json'), 'utf8'));
+  const weights = WEIGHTS; // importato come modulo JS: sopravvive al bundling (no ENOENT)
   let total = 0, wsum = 0;
   for (const k of Object.keys(CATEGORY_LABELS)) { total += results[k].score * weights[k]; wsum += weights[k]; }
   const overall = Math.round(total / wsum);

@@ -1,4 +1,6 @@
 'use client';
+import { useLang, LangSwitch } from './i18n';
+
 // Menu condiviso dei tool Beacon. Aggiungere un tool = una riga in TOOLS.
 const TOOLS = [
   { href: '/', key: 'geo', label: 'GEO checker' },
@@ -8,19 +10,21 @@ const TOOLS = [
 ];
 
 export default function ToolNav({ active, tag }) {
+  const { t } = useLang();
   return (
     <header className="topbar">
       <div className="bar-in">
         <a className="brand" href="/" style={{ textDecoration: 'none' }}>
-          <span className="dot" />Beacon{tag && <span className="tag">{tag}</span>}
+          <span className="dot" />Beacon{tag && <span className="tag">{t(tag)}</span>}
         </a>
-        <nav className="toolmenu" aria-label="Strumenti Beacon">
-          {TOOLS.map((t) => (
-            <a key={t.key} href={t.href}
-               className={'toollink' + (t.key === active ? ' on' : '')}
-               aria-current={t.key === active ? 'page' : undefined}>{t.label}</a>
+        <nav className="toolmenu" aria-label={t('Strumenti Beacon')}>
+          {TOOLS.map((tool) => (
+            <a key={tool.key} href={tool.href}
+               className={'toollink' + (tool.key === active ? ' on' : '')}
+               aria-current={tool.key === active ? 'page' : undefined}>{t(tool.label)}</a>
           ))}
         </nav>
+        <LangSwitch />
       </div>
     </header>
   );

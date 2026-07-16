@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
 import ToolNav from './nav';
+import Turnstile from './turnstile';
+import { useLang, Rich } from './i18n';
 
 const LABELS = {
   access: 'Accesso AI', agentFiles: 'File per agenti e AI', structured: 'Dati strutturati e SEO',
@@ -46,18 +48,20 @@ function Gauge({ score }) {
 }
 
 export default function Home() {
+  const { t } = useLang();
   const [url, setUrl] = useState('');
   const [renderJs, setRenderJs] = useState(false);
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState('');
+  const [tk, setTk] = useState(''); // token Turnstile (vuoto = inerte)
 
   async function analyze(useJs) {
     setLoading(true); setErr(''); setRes(null);
     try {
-      const r = await fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, renderJs: useJs }) });
+      const r = await fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, renderJs: useJs, turnstileToken: tk }) });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'Analisi fallita — riprova tra poco.');
+      if (!r.ok) throw new Error(data.error || t('Analisi fallita — riprova tra poco.'));
       setRes(data);
     } catch (e2) { setErr(String(e2.message || e2)); }
     finally { setLoading(false); }
@@ -85,16 +89,19 @@ export default function Home() {
 
       <main className="wrap">
         <div className="hero">
+          {/* Ritorno al sito principale — prima del kicker, come richiesto */}
+          <a className="back-home" href="https://lucarimediotti.com">&larr; {t('Torna a lucarimediotti.com')}</a>
           <div className="kicker">GEO · Generative Engine Optimization</div>
-          <h1>Le AI <span className="hl">leggono</span> il tuo sito?</h1>
-          <p className="lede">Inserisci l'indirizzo: in un attimo scopri cosa trovano i crawler AI, cosa gli sfugge e da dove partire per migliorare.</p>
+          <h1><Rich s="Le AI *leggono* il tuo sito?" /></h1>
+          <p className="lede">{t("Inserisci l'indirizzo: in un attimo scopri cosa trovano i crawler AI, cosa gli sfugge e da dove partire per migliorare.")}</p>
         </div>
 
         <form onSubmit={run} id="analizza">
-          <input type="text" placeholder="iltuosito.it" value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Indirizzo del sito" />
-          <button type="submit" className="go" disabled={loading || !url}>{loading ? 'Analizzo…' : 'Illumina →'}</button>
+          <input type="text" placeholder={t('iltuosito.it')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito')} />
+          <button type="submit" className="go" disabled={loading || !url}>{loading ? t('Analizzo…') : t('Illumina →')}</button>
         </form>
-        <label className="opt"><input type="checkbox" checked={renderJs} onChange={(e) => setRenderJs(e.target.checked)} /> Esegui anche il rendering JavaScript (mostra il contenuto delle SPA)</label>
+        <label className="opt"><input type="checkbox" checked={renderJs} onChange={(e) => setRenderJs(e.target.checked)} /> {t('Esegui anche il rendering JavaScript (mostra il contenuto delle SPA)')}</label>
+        <Turnstile onToken={setTk} />
 
         {err && <p className="err">⚠ {err}</p>}
 
@@ -104,9 +111,9 @@ export default function Home() {
               <Gauge score={res.overall} />
               <div className="rmeta">
                 <div className="host">{res.url}</div>
-                <div className="verdict">{verdict(res.overall)}</div>
-                <div className="sub">{res.render?.ok ? 'analisi con rendering JS' : 'analisi HTML servito (no-JS)'}</div>
-                <button type="button" className="dl" onClick={downloadLlms}>⬇ Genera il tuo llms.txt</button>
+                <div className="verdict">{t(verdict(res.overall))}</div>
+                <div className="sub">{res.render?.ok ? t('analisi con rendering JS') : t('analisi HTML servito (no-JS)')}</div>
+                <button type="button" className="dl" onClick={downloadLlms}>⬇ {t('Genera il tuo llms.txt')}</button>
               </div>
             </div>
 
@@ -114,7 +121,7 @@ export default function Home() {
               <div className={'notice ' + res.notice.type}>
                 <span>{res.notice.msg}</span>
                 {res.notice.type === 'maybe-spa' && !res.render?.ok && (
-                  <button type="button" className="retry" onClick={retryJs} disabled={loading}>Riprova con rendering JS</button>
+                  <button type="button" className="retry" onClick={retryJs} disabled={loading}>{t('Riprova con rendering JS')}</button>
                 )}
               </div>
             )}
@@ -124,7 +131,7 @@ export default function Home() {
                 const s = res.categories[k].score;
                 return (
                   <div className="cat" key={k}>
-                    <div className="top"><span className="lab">{label}</span><span className="val" style={{ color: color(s) }}>{s}</span></div>
+                    <div className="top"><span className="lab">{t(label)}</span><span className="val" style={{ color: color(s) }}>{s}</span></div>
                     <div className="bar"><i style={{ width: s + '%', background: color(s) }} /></div>
                   </div>
                 );
@@ -133,7 +140,7 @@ export default function Home() {
 
             {res.tech && (
               <div className="rights">
-                <div className="rt">Fondamentali tecnici <span className="info">— informativo, non incide sul punteggio</span></div>
+                <div className="rt">{t('Fondamentali tecnici')} <span className="info">— {t('informativo, non incide sul punteggio')}</span></div>
                 <ul>
                   {res.tech.checks.map((c, i) => (
                     <li key={i}><span className={c.status === 'good' ? 'pin' : c.status === 'crit' ? 'pc' : 'pn'}>{c.status === 'good' ? '✓' : c.status === 'crit' ? '✕' : '○'}</span> {c.name} — {c.detail}</li>
@@ -144,7 +151,7 @@ export default function Home() {
 
             {res.rights && (
               <div className="rights">
-                <div className="rt">Segnali e diritti AI <span className="info">— informativo, non incide sul punteggio</span></div>
+                <div className="rt">{t('Segnali e diritti AI')} <span className="info">— {t('informativo, non incide sul punteggio')}</span></div>
                 <ul>
                   {res.rights.checks.map((c, i) => (
                     <li key={i}><span className={c.status === 'good' ? 'pin' : 'pn'}>{c.status === 'good' ? '✓' : '○'}</span> {c.name} — {c.detail}</li>
@@ -155,7 +162,7 @@ export default function Home() {
 
             {fixes.length > 0 && (
               <div className="fixes">
-                <h3>Azioni consigliate</h3>
+                <h3>{t('Azioni consigliate')}</h3>
                 <ul>{fixes.slice(0, 8).map((f, i) => <li key={i}>{f}</li>)}</ul>
               </div>
             )}
@@ -163,28 +170,28 @@ export default function Home() {
         )}
 
         <section className="features" id="controlli">
-          <div className="kicker">Cosa controlliamo</div>
-          <p className="fintro">Cinque categorie fanno il punteggio; le ultime due sono controlli informativi. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.</p>
+          <div className="kicker">{t('Cosa controlliamo')}</div>
+          <p className="fintro">{t("Cinque categorie fanno il punteggio; le ultime due sono controlli informativi. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.")}</p>
           <div className="speclist">
             {FEATURES.map((f) => (
               <div className={'specrow' + (f.info ? ' info' : '')} key={f.t}>
                 <div className="spec-h">
                   <span className="ic"><Icon k={f.k} /></span>
-                  <h3>{f.t}{f.info && <span className="badge" aria-hidden="true">info</span>}</h3>
+                  <h3>{t(f.t)}{f.info && <span className="badge" aria-hidden="true">info</span>}</h3>
                 </div>
-                <p>{f.d}</p>
+                <p>{t(f.d)}</p>
               </div>
             ))}
           </div>
         </section>
 
         <section className="features" id="suite" style={{ marginTop: 44 }}>
-          <div className="kicker">La suite Beacon</div>
-          <p className="fintro">Non solo GEO. Beacon controlla anche l'accessibilità (WCAG/EAA) e la performance, e le unisce in un report unico pronto per il cliente.</p>
+          <div className="kicker">{t('La suite Beacon')}</div>
+          <p className="fintro">{t("Non solo GEO. Beacon controlla anche l'accessibilità (WCAG/EAA) e la performance, e le unisce in un report unico pronto per il cliente.")}</p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <a className="dl" href="/a11y">Accessibilità · WCAG/EAA →</a>
+            <a className="dl" href="/a11y">{t('Accessibilità')} · WCAG/EAA →</a>
             <a className="dl" href="/perf">Performance · Lighthouse →</a>
-            <a className="dl" href="/report">Report completo →</a>
+            <a className="dl" href="/report">{t('Report completo')} →</a>
           </div>
         </section>
       </main>
@@ -193,13 +200,17 @@ export default function Home() {
         <div className="foot-in">
           <div className="fleft">
             <div className="fbrand">Beacon <span className="hl">🔦</span></div>
-            <p className="fdesc">Suite gratuita che misura cosa vedono del tuo sito le AI, gli screen reader e i motori: GEO, accessibilità (WCAG/EAA) e performance.</p>
+            <p className="fdesc">{t('Suite gratuita che misura cosa vedono del tuo sito le AI, gli screen reader e i motori: GEO, accessibilità (WCAG/EAA) e performance.')}</p>
           </div>
-          <a className="ghlink" href="https://github.com/LRimes90/beacon-geo" target="_blank" rel="noreferrer"><span className="star">★</span> Codice su GitHub</a>
+          <a className="ghlink" href="https://github.com/LRimes90/beacon-geo" target="_blank" rel="noreferrer"><span className="star">★</span> {t('Codice su GitHub')}</a>
         </div>
         <div className="foot-bot">
           <span>© 2026 Beacon · open source</span>
-          <span>Un progetto di Luca Rimediotti</span>
+          <span className="flegal">
+            {/* Pagine legali del dominio principale (Beacon vive sul sottodominio) */}
+            <a href="https://lucarimediotti.com/privacy-policy/">Privacy</a> · <a href="https://lucarimediotti.com/cookie-policy-ue/">Cookie</a> · <a href="https://lucarimediotti.com/termini-e-condizioni/">{t('Termini')}</a>
+          </span>
+          <span>{t('Un progetto di Luca Rimediotti')}</span>
         </div>
       </footer>
     </>

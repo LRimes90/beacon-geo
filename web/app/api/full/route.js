@@ -2,6 +2,7 @@
 import { auditAll } from 'beacon-geo/suite';
 import { snapshot, diff, saveSnapshot, loadHistory } from 'beacon-geo/history';
 import { join } from 'node:path';
+import { guard } from 'beacon-geo/guard';
 
 export const runtime = 'nodejs';
 export const maxDuration = 90;      // 3 tool in parallelo, alcuni lanciano Chromium/PSI
@@ -12,6 +13,7 @@ export async function POST(req) {
   try { body = await req.json(); } catch { return Response.json({ error: 'JSON non valido' }, { status: 400 }); }
   const { url, renderJs, strategy } = body || {};
   if (!url || typeof url !== 'string') return Response.json({ error: 'Indirizzo del sito mancante' }, { status: 400 });
+  const blocked = await guard(req, body); if (blocked) return blocked;
   try {
     const r = await auditAll(url, { renderJs: !!renderJs, strategy: strategy === 'desktop' ? 'desktop' : 'mobile', psiKey: process.env.PAGESPEED_KEY });
     if (r.geo && r.geo.html) delete r.geo.html; // non rispedire l'HTML grezzo

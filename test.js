@@ -9,6 +9,7 @@ import { generateStatement } from './src/statement.js';
 import { remedyFor, REMEDIATION } from './src/remediation.js';
 import { toHtmlSuite, toMarkdownSuite } from './src/suiteReport.js';
 import { snapshot, diff } from './src/history.js';
+import { rateLimit, verifyTurnstile } from './src/guard.js';
 import { renderHtml } from './src/render.js';
 import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
@@ -154,6 +155,21 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(d.geo === 10 && d.a11y === 10 && d.perf === 5 && d.axe === -5, 'history: delta corretti (axe -5 = meno violazioni = meglio)');
   const s2 = snapshot({ host: 'y.com', geo: { error: 'x' }, a11y: { result: { score: 40 } } }, 't');
   ok(s2.geo === null && s2.a11y === 40 && s2.perf === null, 'history: campi mancanti/errore → null');
+}
+
+// guard.js — rate-limit + Turnstile (inerti senza env)
+{
+  let last;
+  for (let i = 0; i < 20; i++) last = rateLimit('ip-a', { limit: 20, windowMs: 60000, now: 1000 });
+  ok(last.ok && last.remaining === 0, 'rate-limit: 20ª richiesta entro il limite passa');
+  const over = rateLimit('ip-a', { limit: 20, windowMs: 60000, now: 1000 });
+  ok(!over.ok && over.retryAfter > 0, 'rate-limit: oltre il limite → blocco con retryAfter');
+  const later = rateLimit('ip-a', { limit: 20, windowMs: 60000, now: 61001 });
+  ok(later.ok, 'rate-limit: scaduta la finestra la stessa IP torna ok');
+
+  ok((await verifyTurnstile('x', undefined)).ok === true, 'turnstile: senza secret è inerte (no-op)');
+  const noTok = await verifyTurnstile('', 'secret-x');
+  ok(noTok.ok === false && /token/.test(noTok.reason), 'turnstile: secret presente ma token mancante → blocca');
 }
 
 // perf.js — summarizePsi: mappatura pura del JSON PageSpeed Insights
