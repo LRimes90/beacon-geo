@@ -48,7 +48,7 @@ function Gauge({ score }) {
 }
 
 export default function Home() {
-  const { t } = useLang();
+  const { t, lang } = useLang(); // lang: inviata alle API → risultati del motore nella lingua della UI
   const [url, setUrl] = useState('');
   const [renderJs, setRenderJs] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -59,7 +59,7 @@ export default function Home() {
   async function analyze(useJs) {
     setLoading(true); setErr(''); setRes(null);
     try {
-      const r = await fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, renderJs: useJs, turnstileToken: tk }) });
+      const r = await fetch('/api/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, renderJs: useJs, turnstileToken: tk, lang }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || t('Analisi fallita — riprova tra poco.'));
       setRes(data);

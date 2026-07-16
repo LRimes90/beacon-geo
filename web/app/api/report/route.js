@@ -3,6 +3,7 @@
 import { toHtmlSuite, toMarkdownSuite } from 'beacon-geo/suite-report';
 import { renderPdfBuffer } from 'beacon-geo/render';
 import { guard } from 'beacon-geo/guard';
+import { normalizeLang } from 'beacon-geo/messages';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -11,18 +12,21 @@ export const dynamic = 'force-dynamic';
 export async function POST(req) {
   let body;
   try { body = await req.json(); } catch { return Response.json({ error: 'JSON non valido' }, { status: 400 }); }
-  const { suite, format = 'html' } = body || {};
+  const { suite, format = 'html', lang } = body || {};
   if (!suite || !suite.host) return Response.json({ error: 'Dati scansione mancanti' }, { status: 400 });
   const blocked = await guard(req, body); if (blocked) return blocked;
   const date = new Date().toISOString().slice(0, 10);
   const base = (suite.host || 'sito').replace(/[^a-z0-9.-]/gi, '_');
+  // lang: preferisci quella della scansione (il contenuto dei check è già in quella lingua),
+  // poi quella richiesta dal client; whitelist it/en/de/fr/es/pt.
+  const L = normalizeLang(suite.lang || lang);
 
   if (format === 'md') {
-    return new Response(toMarkdownSuite(suite, { date }), {
+    return new Response(toMarkdownSuite(suite, { date, lang: L }), {
       headers: { 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="beacon-${base}.md"` },
     });
   }
-  const html = toHtmlSuite(suite, { date });
+  const html = toHtmlSuite(suite, { date, lang: L });
   if (format === 'pdf') {
     const r = await renderPdfBuffer(html);
     if (!r.ok) return Response.json({ error: 'PDF non generato: ' + r.reason }, { status: 500 });

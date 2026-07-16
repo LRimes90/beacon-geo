@@ -27,7 +27,7 @@ function Card({ label, score, sub, c }) {
 }
 
 export default function Report() {
-  const { t } = useLang();
+  const { t, lang } = useLang(); // lang: inviata alle API → scansione e report nella lingua della UI
   const [url, setUrl] = useState('');
   const [renderJs, setRenderJs] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -40,7 +40,7 @@ export default function Report() {
     e.preventDefault();
     setLoading(true); setErr(''); setRes(null);
     try {
-      const r = await fetch('/api/full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, renderJs, turnstileToken: tk }) });
+      const r = await fetch('/api/full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, renderJs, turnstileToken: tk, lang }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || t('Scansione fallita — riprova tra poco.'));
       setRes(data);
@@ -52,7 +52,7 @@ export default function Report() {
     if (!res) return;
     setBusy(format);
     try {
-      const r = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ suite: res, format }) });
+      const r = await fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ suite: res, format, lang }) });
       if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || t('Generazione fallita')); }
       const blob = await r.blob();
       const a = document.createElement('a');

@@ -1,4 +1,8 @@
 // app/api/llms/route.js — genera e restituisce il llms.txt di un sito (testo scaricabile).
+// i18n (fase 2): VOLUTAMENTE senza `lang`. Il llms.txt è un artefatto da pubblicare sul
+// sito del proprietario: la sua lingua deve seguire il sito, non la UI di chi lo genera.
+// Le intestazioni generate restano in italiano (lingua base di Beacon) finché non
+// esisterà una rilevazione della lingua del sito analizzato.
 import { audit } from 'beacon-geo/audit';
 import { generateLlmsTxt } from 'beacon-geo/llmstxt';
 import { guard } from 'beacon-geo/guard';

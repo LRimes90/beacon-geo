@@ -3,6 +3,7 @@
 // (così combacia con la garanzia "Lighthouse >90") + i CWV in laboratorio.
 // Zero dipendenze: una GET a Google. La API key è OPZIONALE (solo per alzare i rate limit).
 // ponytail: PSI invece di far girare Lighthouse in locale — niente dep pesante, punteggio ufficiale.
+import { normalizeLang } from './messages/index.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 
@@ -47,13 +48,16 @@ export function summarizePsi(json) {
 }
 
 // Orchestratore sottile (I/O): interroga PageSpeed Insights.
-export async function auditPerf(rawUrl, { strategy = 'mobile', key } = {}) {
+// i18n: `lang` viene passato a PSI come `locale` → Google restituisce displayValue
+// e titoli delle opportunità già tradotti (i nomi metrica LCP/CLS/… restano universali).
+export async function auditPerf(rawUrl, { strategy = 'mobile', key, lang = 'it' } = {}) {
   let u = String(rawUrl).trim();
   if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
   const url = new URL(u).href;
   const host = new URL(url).host;
   const api = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=' +
-    encodeURIComponent(url) + '&category=performance&strategy=' + strategy + (key ? '&key=' + key : '');
+    encodeURIComponent(url) + '&category=performance&strategy=' + strategy +
+    '&locale=' + normalizeLang(lang) + (key ? '&key=' + key : '');
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 45000);
   try {

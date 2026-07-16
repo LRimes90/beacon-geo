@@ -283,4 +283,29 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(llms.includes('## Progetti'), 'llms.txt raggruppa per sezione "Progetti"');
 }
 
+// messages/ — i18n del motore: catalogo, interpolazione, whitelist, fallback → italiano
+{
+  const { msg, normalizeLang, ENGINE_LANGS } = await import('./src/messages/index.js');
+  ok(ENGINE_LANGS.length === 6 && normalizeLang('de') === 'de' && normalizeLang('xx') === 'it' && normalizeLang(undefined) === 'it', 'i18n: whitelist lingue (valore ignoto → it)');
+  ok(msg('en', 'verdict.good') === 'Good' && msg('it', 'verdict.good') === 'Buono', 'i18n: dizionario en compilato');
+  ok(msg('en', 'access.robots.detail', { allowed: 3, total: 5 }) === '3/5 AI crawlers allowed', 'i18n: interpolazione {parametri}');
+  ok(msg('de', 'verdict.good') === 'Gut', 'i18n: dizionario de compilato');
+  ok(msg('xx', 'verdict.good') === 'Buono' && msg('it', 'chiave.inesistente') === 'chiave.inesistente', 'i18n: lingua ignota → italiano; chiave ignota → chiave');
+
+  // gli analyzer producono le stringhe nella lingua richiesta; default = it (invariato)
+  const tEn = analyzeTech({ https: false, noindex: true, viewport: false, statusOk: false }, 'en');
+  ok(tEn.checks.find((c) => c.name.startsWith('Indexability')), 'i18n: analyzeTech in inglese');
+  const aEn = analyzeA11y('<html><head></head><body></body></html>', 'en');
+  ok(aEn.checks[0].name === 'Page language (lang)' && /lang="en"/.test(aEn.checks[0].fix), 'i18n: analyzeA11y in inglese');
+  const rdEn = analyzeReadability({ served: '<div>due parole</div>' }, 'en');
+  ok(rdEn.checks[0].detail.includes('words readable without JS'), 'i18n: detail parametrico in inglese');
+  // remediation localizzata + fallback lingua non compilata
+  ok(remedyFor({ id: 'label' }, 'en').after.includes('<label for="email">Email</label>'), 'i18n: remedy in inglese');
+  ok(remedyFor({ id: 'label' }, 'xx').why === remedyFor({ id: 'label' }).why, 'i18n: remedy con lingua ignota → italiano');
+  // report combinato in inglese (il telaio segue lang)
+  const s = { url: 'https://x.com/', host: 'x.com', geo: { error: 'boom' }, a11y: { error: 'boom' }, perf: { ok: false, reason: 'q' } };
+  ok(toMarkdownSuite(s, { lang: 'en' }).includes('Not available:'), 'i18n: suite markdown in inglese');
+  ok(toHtmlSuite(s, { lang: 'en' }).includes('<html lang="en">'), 'i18n: suite html con lang corretto');
+}
+
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

@@ -11,14 +11,16 @@ function normUrl(raw) {
   return new URL(u).href;
 }
 
-export async function auditAll(rawUrl, { renderJs = false, strategy = 'mobile', psiKey } = {}) {
+// i18n: `lang` (default 'it') viene propagato ai 3 tool e riportato nel risultato,
+// così il report scaricabile può riusare la stessa lingua della scansione.
+export async function auditAll(rawUrl, { renderJs = false, strategy = 'mobile', psiKey, lang = 'it' } = {}) {
   const url = normUrl(rawUrl);
   const host = new URL(url).host;
   const [geo, a11y, perf] = await Promise.allSettled([
-    audit(url, { renderJs }),
-    auditA11y(url, { deep: true }),
-    auditPerf(url, { strategy, key: psiKey }),
+    audit(url, { renderJs, lang }),
+    auditA11y(url, { deep: true, lang }),
+    auditPerf(url, { strategy, key: psiKey, lang }),
   ]);
   const val = (s) => (s.status === 'fulfilled' ? s.value : { error: String(s.reason).slice(0, 140) });
-  return { url, host, geo: val(geo), a11y: val(a11y), perf: val(perf) };
+  return { url, host, lang, geo: val(geo), a11y: val(a11y), perf: val(perf) };
 }

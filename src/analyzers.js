@@ -2,13 +2,17 @@
 // Ognuna riceve dati già raccolti (niente rete qui: così sono testabili con assert)
 // e ritorna { score: 0-100, checks: [{name, status, detail, fix?}] }.
 // status: 'good' | 'warn' | 'crit' | 'info'
+// i18n: ogni analyzer accetta `lang` (default 'it') e legge le stringhe dal
+// catalogo src/messages/ — la logica di punteggio resta identica.
 import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links } from './lib.js';
+import { makeT } from './messages/index.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 const pct = (a, b) => (b ? (a / b) * 100 : 0);
 
 // ① ACCESSO AI — quota di crawler ammessi dal robots.txt + che raggiungono la pagina live.
-export function analyzeAccess({ robotsAllowed, liveFetch }) {
+export function analyzeAccess({ robotsAllowed, liveFetch }, lang = 'it') {
+  const t = makeT(lang);
   const total = Object.keys(robotsAllowed).length || 1;
   const allowed = Object.values(robotsAllowed).filter(Boolean).length;
   const liveTotal = Object.keys(liveFetch).length || 1;
@@ -18,18 +22,19 @@ export function analyzeAccess({ robotsAllowed, liveFetch }) {
   return {
     score,
     checks: [
-      { name: 'Crawler AI ammessi (robots.txt)', status: st(allowed / total),
-        detail: `${allowed}/${total} crawler AI ammessi`,
-        fix: allowed < total ? 'Rimuovi i Disallow che bloccano GPTBot/ClaudeBot/PerplexityBot ecc. dal robots.txt' : null },
-      { name: 'Raggiungibilità live (fetch impersonato)', status: st(liveOk / liveTotal),
-        detail: `${liveOk}/${liveTotal} user-agent hanno ricevuto la pagina`,
-        fix: liveOk < liveTotal ? 'Rimuovi blocchi lato server/WAF/Cloudflare sugli user-agent AI' : null },
+      { name: t('access.robots.name'), status: st(allowed / total),
+        detail: t('access.robots.detail', { allowed, total }),
+        fix: allowed < total ? t('access.robots.fix') : null },
+      { name: t('access.live.name'), status: st(liveOk / liveTotal),
+        detail: t('access.live.detail', { ok: liveOk, total: liveTotal }),
+        fix: liveOk < liveTotal ? t('access.live.fix') : null },
     ],
   };
 }
 
 // ② FILE PER AGENTI E AI — file base + standard emergenti.
-export function analyzeAgentFiles(files) {
+export function analyzeAgentFiles(files, lang = 'it') {
+  const t = makeT(lang);
   // files: { robotsTxt, sitemap, llmsTxt, skillMd, mcpJson, agentSkills } (bool)
   const base = ['robotsTxt', 'sitemap', 'llmsTxt'];
   const emerging = ['skillMd', 'mcpJson', 'agentSkills'];
@@ -40,18 +45,19 @@ export function analyzeAgentFiles(files) {
   return {
     score,
     checks: [
-      { name: 'File di base (robots, sitemap, llms.txt)', status: baseHave === 3 ? 'good' : baseHave >= 2 ? 'warn' : 'crit',
-        detail: `${baseHave}/3 presenti` + (!files.llmsTxt ? ' — manca llms.txt' : ''),
-        fix: !files.llmsTxt ? 'Genera e pubblica /llms.txt (usa: beacon <url> --llms)' : null },
-      { name: 'Standard agentici emergenti', status: emHave ? 'good' : 'info',
-        detail: `${emHave}/3 (skill.md, .well-known/mcp.json, agent-skills)`,
-        fix: emHave === 0 ? 'Opportunità: aggiungi skill.md e .well-known/mcp.json per essere leggibile dagli agenti' : null },
+      { name: t('agentFiles.base.name'), status: baseHave === 3 ? 'good' : baseHave >= 2 ? 'warn' : 'crit',
+        detail: t('agentFiles.base.detail', { have: baseHave }) + (!files.llmsTxt ? t('agentFiles.base.missingLlms') : ''),
+        fix: !files.llmsTxt ? t('agentFiles.base.fix') : null },
+      { name: t('agentFiles.emerging.name'), status: emHave ? 'good' : 'info',
+        detail: t('agentFiles.emerging.detail', { have: emHave }),
+        fix: emHave === 0 ? t('agentFiles.emerging.fix') : null },
     ],
   };
 }
 
 // ③ DATI STRUTTURATI E SEO
-export function analyzeStructured(html) {
+export function analyzeStructured(html, lang = 'it') {
+  const t = makeT(lang);
   const title = getTitle(html) || '';
   const desc = getMeta(html, 'description') || '';
   const types = jsonLdTypes(html);
@@ -68,21 +74,22 @@ export function analyzeStructured(html) {
   return {
     score,
     checks: [
-      { name: 'Title & meta description', status: okTitle && okDesc ? 'good' : 'warn',
-        detail: `title ${title.length} char, description ${desc.length} char`,
-        fix: !okTitle || !okDesc ? 'Title 15-65 char, meta description 50-160 char, unici per pagina' : null },
-      { name: 'Dati strutturati (JSON-LD)', status: types.length ? 'good' : 'crit',
-        detail: types.length ? `${jsonLdCount(html)} blocchi: ${types.join(', ')}` : 'nessun JSON-LD',
-        fix: !types.length ? 'Aggiungi JSON-LD Schema.org (almeno Organization + WebSite)' : null },
-      { name: 'Meta di indicizzazione/condivisione', status: sigHave >= 3 ? 'good' : sigHave >= 1 ? 'warn' : 'crit',
-        detail: `${sigHave}/4 (canonical, hreflang, OG, Twitter)`,
-        fix: sigHave < 3 ? 'Aggiungi canonical + Open Graph + Twitter Card' : null },
+      { name: t('structured.meta.name'), status: okTitle && okDesc ? 'good' : 'warn',
+        detail: t('structured.meta.detail', { title: title.length, desc: desc.length }),
+        fix: !okTitle || !okDesc ? t('structured.meta.fix') : null },
+      { name: t('structured.jsonld.name'), status: types.length ? 'good' : 'crit',
+        detail: types.length ? t('structured.jsonld.detail', { count: jsonLdCount(html), types: types.join(', ') }) : t('structured.jsonld.none'),
+        fix: !types.length ? t('structured.jsonld.fix') : null },
+      { name: t('structured.signals.name'), status: sigHave >= 3 ? 'good' : sigHave >= 1 ? 'warn' : 'crit',
+        detail: t('structured.signals.detail', { have: sigHave }),
+        fix: sigHave < 3 ? t('structured.signals.fix') : null },
     ],
   };
 }
 
 // ④ LEGGIBILITÀ PER LE MACCHINE — calcolata su HTML servito; se disponibile, confronta col post-render.
-export function analyzeReadability({ served, rendered }) {
+export function analyzeReadability({ served, rendered }, lang = 'it') {
+  const t = makeT(lang);
   const s = readabilityMetrics(served);
   // Ogni termine è già in scala (max 30/30/20/20 = 100). pct() ritorna 0-100 → moltiplica per 0.x per riportare in scala.
   const score = clamp(
@@ -92,28 +99,28 @@ export function analyzeReadability({ served, rendered }) {
     (s.imgTotal ? pct(s.imgAlt, s.imgTotal) * 0.2 : 20)
   );
   const checks = [
-    { name: 'Contenuto nell\'HTML servito', status: s.words >= 300 ? 'good' : s.words >= 100 ? 'warn' : 'crit',
-      detail: `${s.words} parole leggibili senza JS`,
-      fix: s.words < 300 ? 'Rendi il contenuto disponibile server-side (SSR/SSG), non solo via JavaScript' : null },
-    { name: 'Ratio semantico HTML5', status: s.ratio >= 0.05 ? 'good' : s.ratio >= 0.02 ? 'warn' : 'crit',
-      detail: `${(s.ratio * 100).toFixed(1)}% (${s.semantic} tag semantici su ${s.total})`,
-      fix: s.ratio < 0.05 ? 'Usa header/nav/main/article/section/footer invece di soli <div>' : null },
-    { name: 'Struttura heading', status: s.h1 === 1 ? 'good' : 'warn',
-      detail: `H1: ${s.h1}, heading totali: ${s.hTotal}`,
-      fix: s.h1 !== 1 ? 'Usa un solo H1 e una gerarchia chiara H2/H3' : null },
-    { name: 'Alt delle immagini', status: !s.imgTotal || s.imgAlt === s.imgTotal ? 'good' : 'warn',
-      detail: `${s.imgAlt}/${s.imgTotal} immagini con alt`,
-      fix: s.imgTotal && s.imgAlt < s.imgTotal ? 'Aggiungi attributo alt descrittivo a tutte le immagini' : null },
+    { name: t('readability.words.name'), status: s.words >= 300 ? 'good' : s.words >= 100 ? 'warn' : 'crit',
+      detail: t('readability.words.detail', { words: s.words }),
+      fix: s.words < 300 ? t('readability.words.fix') : null },
+    { name: t('readability.semantic.name'), status: s.ratio >= 0.05 ? 'good' : s.ratio >= 0.02 ? 'warn' : 'crit',
+      detail: t('readability.semantic.detail', { pct: (s.ratio * 100).toFixed(1), semantic: s.semantic, total: s.total }),
+      fix: s.ratio < 0.05 ? t('readability.semantic.fix') : null },
+    { name: t('readability.headings.name'), status: s.h1 === 1 ? 'good' : 'warn',
+      detail: t('readability.headings.detail', { h1: s.h1, total: s.hTotal }),
+      fix: s.h1 !== 1 ? t('readability.headings.fix') : null },
+    { name: t('readability.alt.name'), status: !s.imgTotal || s.imgAlt === s.imgTotal ? 'good' : 'warn',
+      detail: t('readability.alt.detail', { withAlt: s.imgAlt, total: s.imgTotal }),
+      fix: s.imgTotal && s.imgAlt < s.imgTotal ? t('readability.alt.fix') : null },
   ];
   // 🆕 differenziatore: delta no-JS vs post-render
   if (rendered) {
     const r = readabilityMetrics(rendered);
     const gain = r.words - s.words;
     checks.push({
-      name: 'Delta JavaScript (no-JS vs render)',
+      name: t('readability.jsdelta.name'),
       status: gain > s.words * 0.5 ? 'crit' : gain > 50 ? 'warn' : 'good',
-      detail: `+${gain} parole dopo il render (servito ${s.words} → render ${r.words})`,
-      fix: gain > 50 ? 'Molto contenuto è iniettato via JS: i bot che non eseguono JS non lo vedono. Valuta SSR.' : null,
+      detail: t('readability.jsdelta.detail', { gain, served: s.words, rendered: r.words }),
+      fix: gain > 50 ? t('readability.jsdelta.fix') : null,
     });
   }
   return { score, checks };
@@ -130,62 +137,71 @@ function readabilityMetrics(html) {
 }
 
 // ⑤ VISIBILITÀ OFF-SITE — CCBot ammesso + presenza in Common Crawl (best-effort).
-export function analyzeOffsite({ ccbotAllowed, inCommonCrawl }) {
+export function analyzeOffsite({ ccbotAllowed, inCommonCrawl }, lang = 'it') {
+  const t = makeT(lang);
   let score = ccbotAllowed ? 60 : 0;
   if (inCommonCrawl === true) score = 100;
   else if (inCommonCrawl === null && ccbotAllowed) score = 60; // CC non interrogabile: non penalizziamo oltre
   return {
     score: clamp(score),
     checks: [
-      { name: 'Accesso a CCBot (Common Crawl)', status: ccbotAllowed ? 'good' : 'crit',
-        detail: ccbotAllowed ? 'CCBot ammesso dal robots.txt' : 'CCBot bloccato',
-        fix: !ccbotAllowed ? 'Ammetti CCBot: molte AI hanno imparato da Common Crawl' : null },
-      { name: 'Presenza in Common Crawl', status: inCommonCrawl === true ? 'good' : 'info',
-        detail: inCommonCrawl === true ? 'trovato nell\'indice CC' : inCommonCrawl === false ? 'non trovato' : 'indice non interrogabile ora' },
+      { name: t('offsite.ccbot.name'), status: ccbotAllowed ? 'good' : 'crit',
+        detail: ccbotAllowed ? t('offsite.ccbot.detail.ok') : t('offsite.ccbot.detail.blocked'),
+        fix: !ccbotAllowed ? t('offsite.ccbot.fix') : null },
+      { name: t('offsite.cc.name'), status: inCommonCrawl === true ? 'good' : 'info',
+        detail: inCommonCrawl === true ? t('offsite.cc.detail.found') : inCommonCrawl === false ? t('offsite.cc.detail.notFound') : t('offsite.cc.detail.unavailable') },
     ],
   };
 }
 
-export const CATEGORY_LABELS = {
-  access: 'Accesso AI', agentFiles: 'File per agenti e AI', structured: 'Dati strutturati e SEO',
-  readability: 'Leggibilità per le macchine', offsite: 'Visibilità off-site',
-};
+// Etichette categorie localizzate (per report/CLI); CATEGORY_LABELS resta la
+// costante italiana storica, ora derivata dal catalogo (retro-compatibile).
+export function categoryLabels(lang = 'it') {
+  const t = makeT(lang);
+  return {
+    access: t('category.access'), agentFiles: t('category.agentFiles'), structured: t('category.structured'),
+    readability: t('category.readability'), offsite: t('category.offsite'),
+  };
+}
+export const CATEGORY_LABELS = categoryLabels('it');
 
 // ⑥ SEGNALI E DIRITTI AI — informativo (NON pesato): cosa il sito dichiara alle AI su uso/licenze.
 // TDMRep (.well-known/tdmrep.json), RSL / rel="license", Content-Signal (robots/header).
-export function analyzeRights({ tdmrep, license, contentSignal }) {
+export function analyzeRights({ tdmrep, license, contentSignal }, lang = 'it') {
+  const t = makeT(lang);
   const present = [tdmrep, license, contentSignal].filter(Boolean).length;
   return {
     informational: true,
     score: clamp(pct(present, 3)),
     checks: [
-      { name: 'TDMRep (Text & Data Mining)', status: tdmrep ? 'good' : 'info',
-        detail: tdmrep ? '.well-known/tdmrep.json presente' : 'nessuna riserva TDM dichiarata',
-        fix: tdmrep ? null : 'Opzionale: pubblica .well-known/tdmrep.json per dichiarare i diritti di text/data mining' },
-      { name: 'Licenza contenuti (RSL / rel=license)', status: license ? 'good' : 'info',
-        detail: license ? 'licenza dichiarata' : 'nessuna licenza esplicita' },
-      { name: 'Content-Signal', status: contentSignal ? 'good' : 'info',
-        detail: contentSignal ? 'direttiva Content-Signal presente' : 'nessuna direttiva Content-Signal',
-        fix: contentSignal ? null : 'Opzionale: usa Content-Signal nel robots.txt per dichiarare consensi (search / ai-input / ai-train)' },
+      { name: t('rights.tdmrep.name'), status: tdmrep ? 'good' : 'info',
+        detail: tdmrep ? t('rights.tdmrep.detail.ok') : t('rights.tdmrep.detail.none'),
+        fix: tdmrep ? null : t('rights.tdmrep.fix') },
+      { name: t('rights.license.name'), status: license ? 'good' : 'info',
+        detail: license ? t('rights.license.detail.ok') : t('rights.license.detail.none') },
+      { name: t('rights.signal.name'), status: contentSignal ? 'good' : 'info',
+        detail: contentSignal ? t('rights.signal.detail.ok') : t('rights.signal.detail.none'),
+        fix: contentSignal ? null : t('rights.signal.fix') },
     ],
   };
 }
 export const RIGHTS_LABEL = 'Segnali e diritti AI';
 
 // ⑦ FONDAMENTALI TECNICI — informativo ma con allarmi forti (noindex/HTTPS bloccano la visibilità).
-export function analyzeTech({ https, noindex, viewport, statusOk }) {
+export function analyzeTech({ https, noindex, viewport, statusOk }, lang = 'it') {
+  const t = makeT(lang);
   const checks = [
-    { name: 'HTTPS', status: https ? 'good' : 'crit',
-      detail: https ? 'servito su HTTPS' : 'la pagina non è su HTTPS',
-      fix: https ? null : 'Servi il sito su HTTPS (certificato TLS)' },
-    { name: 'Indicizzabilità (meta robots)', status: noindex ? 'crit' : 'good',
-      detail: noindex ? 'la pagina è "noindex": esclusa da motori e AI' : 'indicizzabile',
-      fix: noindex ? 'Rimuovi "noindex" dal meta robots se vuoi essere trovato' : null },
-    { name: 'Viewport mobile', status: viewport ? 'good' : 'warn',
-      detail: viewport ? 'meta viewport presente' : 'manca il meta viewport',
-      fix: viewport ? null : 'Aggiungi <meta name="viewport" content="width=device-width, initial-scale=1">' },
-    { name: 'Risposta del server', status: statusOk ? 'good' : 'crit',
-      detail: statusOk ? 'HTTP 200 OK' : 'la pagina non risponde correttamente (non 2xx)' },
+    { name: t('tech.https.name'), status: https ? 'good' : 'crit',
+      detail: https ? t('tech.https.detail.ok') : t('tech.https.detail.no'),
+      fix: https ? null : t('tech.https.fix') },
+    { name: t('tech.noindex.name'), status: noindex ? 'crit' : 'good',
+      detail: noindex ? t('tech.noindex.detail.no') : t('tech.noindex.detail.ok'),
+      fix: noindex ? t('tech.noindex.fix') : null },
+    { name: t('tech.viewport.name'), status: viewport ? 'good' : 'warn',
+      detail: viewport ? t('tech.viewport.detail.ok') : t('tech.viewport.detail.no'),
+      fix: viewport ? null : t('tech.viewport.fix') },
+    { name: t('tech.status.name'), status: statusOk ? 'good' : 'crit',
+      detail: statusOk ? t('tech.status.detail.ok') : t('tech.status.detail.no') },
   ];
   const good = checks.filter((c) => c.status === 'good').length;
   return { informational: true, score: clamp(pct(good, 4)), checks };

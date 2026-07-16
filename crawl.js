@@ -56,8 +56,9 @@ export function aggregate(homeAudit, pageResults, weights) {
 }
 
 // ---- orchestratore ----
-export async function crawlSite(rawUrl, { max = 6, renderJs = false } = {}) {
-  const home = await audit(rawUrl, { renderJs });
+// i18n: `lang` (default 'it') propagata all'audit della home e agli analyzer di pagina.
+export async function crawlSite(rawUrl, { max = 6, renderJs = false, lang = 'it' } = {}) {
+  const home = await audit(rawUrl, { renderJs, lang });
   const origin = new URL(home.url).origin;
 
   // discovery: sitemap dichiarata, altrimenti link interni della home
@@ -76,7 +77,7 @@ export async function crawlSite(rawUrl, { max = 6, renderJs = false } = {}) {
     if (!res.ok || res.body.length < 300) continue;
     let rendered = null;
     if (renderJs) { const r = await renderHtml(u); rendered = r.ok ? r.html : null; }
-    pageResults.push({ url: u, structured: analyzeStructured(res.body).score, readability: analyzeReadability({ served: res.body, rendered }).score });
+    pageResults.push({ url: u, structured: analyzeStructured(res.body, lang).score, readability: analyzeReadability({ served: res.body, rendered }, lang).score });
   }
 
   const weights = WEIGHTS; // modulo JS: sopravvive al bundling (no ENOENT in prod)

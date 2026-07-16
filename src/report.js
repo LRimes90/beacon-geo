@@ -1,55 +1,68 @@
 // src/report.js — export cliente-ready: Markdown + HTML brandizzato.
 // Funzioni pure: prendono un risultato di audit() o crawlSite() e ritornano una stringa.
-import { CATEGORY_LABELS } from './analyzers.js';
+// i18n: verdict/normalize/toMarkdown/toHtml accettano `lang` (default 'it');
+// etichette e testi vengono dal catalogo src/messages/ (fallback italiano).
+import { categoryLabels, CATEGORY_LABELS } from './analyzers.js';
+import { makeT } from './messages/index.js';
 
-export const verdict = (s) => (s >= 80 ? 'Buono' : s >= 60 ? 'Discreto' : s >= 40 ? 'Da migliorare' : 'Critico');
+export const verdict = (s, lang = 'it') => {
+  const t = makeT(lang);
+  return s >= 80 ? t('verdict.good') : s >= 60 ? t('verdict.fair') : s >= 40 ? t('verdict.improve') : t('verdict.critical');
+};
 
 // Normalizza audit() e crawlSite() in una forma comune.
-export function normalize(r) {
+// `kind` resta un valore semantico ('sito'|'pagina'): la traduzione avviene al render.
+export function normalize(r, lang = 'it') {
   if (r.aggregate) {
     // risultato di crawlSite: categorie già numeriche, fix dalla home
-    const fixes = collectFixes(r.home);
+    const fixes = collectFixes(r.home, lang);
     return { host: r.host, url: r.url, kind: 'sito', pages: r.pagesAnalyzed, overall: r.aggregate.overall, scores: r.aggregate.categories, fixes };
   }
   const scores = Object.fromEntries(Object.keys(CATEGORY_LABELS).map((k) => [k, r.categories[k].score]));
-  return { host: r.host, url: r.url, kind: 'pagina', pages: 1, overall: r.overall, scores, fixes: collectFixes(r) };
+  return { host: r.host, url: r.url, kind: 'pagina', pages: 1, overall: r.overall, scores, fixes: collectFixes(r, lang) };
 }
-function collectFixes(auditLike) {
+function collectFixes(auditLike, lang = 'it') {
   const out = [];
   if (!auditLike?.categories) return out;
-  for (const k of Object.keys(CATEGORY_LABELS)) {
-    for (const c of auditLike.categories[k]?.checks || []) if (c.fix) out.push({ cat: CATEGORY_LABELS[k], fix: c.fix });
+  const labels = categoryLabels(lang);
+  for (const k of Object.keys(labels)) {
+    for (const c of auditLike.categories[k]?.checks || []) if (c.fix) out.push({ cat: labels[k], fix: c.fix });
   }
   return out;
 }
 
-export function toMarkdown(r, { date = '' } = {}) {
-  const d = normalize(r);
-  let md = `# Report AI-readiness — ${d.host}\n\n`;
-  md += `**Punteggio ${d.kind}: ${d.overall}/100** (${verdict(d.overall)})\n\n`;
-  md += `- URL: ${d.url}\n- Pagine analizzate: ${d.pages}\n${date ? `- Data: ${date}\n` : ''}\n`;
-  md += `## Categorie\n\n| Categoria | Punteggio | Esito |\n|---|--:|---|\n`;
-  for (const [k, label] of Object.entries(CATEGORY_LABELS)) md += `| ${label} | ${d.scores[k]}/100 | ${verdict(d.scores[k])} |\n`;
+export function toMarkdown(r, { date = '', lang = 'it' } = {}) {
+  const t = makeT(lang);
+  const d = normalize(r, lang);
+  const labels = categoryLabels(lang);
+  const kind = d.kind === 'sito' ? t('report.kind.site') : t('report.kind.page');
+  let md = `# ${t('report.md.title', { host: d.host })}\n\n`;
+  md += `**${t('report.scoreLine', { kind, score: d.overall })}** (${verdict(d.overall, lang)})\n\n`;
+  md += `- URL: ${d.url}\n- ${t('report.pages')}: ${d.pages}\n${date ? `- ${t('report.date')}: ${date}\n` : ''}\n`;
+  md += `## ${t('report.categories')}\n\n${t('report.tableHeader')}\n|---|--:|---|\n`;
+  for (const [k, label] of Object.entries(labels)) md += `| ${label} | ${d.scores[k]}/100 | ${verdict(d.scores[k], lang)} |\n`;
   if (d.fixes.length) {
-    md += `\n## Azioni consigliate\n\n`;
+    md += `\n## ${t('report.actions')}\n\n`;
     for (const f of d.fixes.slice(0, 10)) md += `- **${f.cat}** — ${f.fix}\n`;
   }
-  md += `\n---\n*Report generato da Beacon 🔦 — GEO / AI-readiness checker.*\n`;
+  md += `\n---\n*${t('report.md.footer')}*\n`;
   return md;
 }
 
-export function toHtml(r, { date = '' } = {}) {
-  const d = normalize(r);
+export function toHtml(r, { date = '', lang = 'it' } = {}) {
+  const t = makeT(lang);
+  const d = normalize(r, lang);
+  const labels = categoryLabels(lang);
   const color = (s) => (s >= 80 ? '#2E8B5F' : s >= 60 ? '#B4841F' : s >= 40 ? '#C77D2E' : '#C0492F');
-  const rows = Object.entries(CATEGORY_LABELS).map(([k, label]) => {
+  const rows = Object.entries(labels).map(([k, label]) => {
     const s = d.scores[k];
     return `<tr><td>${label}</td><td class="n" style="color:${color(s)}">${s}</td>
       <td><div class="bar"><i style="width:${s}%;background:${color(s)}"></i></div></td></tr>`;
   }).join('');
   const fixes = d.fixes.length
-    ? `<h2>Azioni consigliate</h2><ul>${d.fixes.slice(0, 10).map((f) => `<li><b>${f.cat}</b> — ${f.fix}</li>`).join('')}</ul>`
+    ? `<h2>${t('report.actions')}</h2><ul>${d.fixes.slice(0, 10).map((f) => `<li><b>${f.cat}</b> — ${f.fix}</li>`).join('')}</ul>`
     : '';
-  return `<!doctype html><html lang="it"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8">
 <title>Beacon · ${d.host}</title>
 <style>
   @page{margin:18mm}
@@ -68,12 +81,12 @@ export function toHtml(r, { date = '' } = {}) {
   ul{padding-left:1.1em} li{margin:.35em 0}
   footer{margin-top:2em;color:#8A9896;font-size:12px;border-top:1px solid #E2E8E8;padding-top:10px}
 </style></head><body>
-  <div class="eyebrow">Report AI-readiness</div>
+  <div class="eyebrow">${t('report.eyebrow')}</div>
   <h1>${d.host}</h1>
-  <div class="score">${d.overall}<small>/100 · ${verdict(d.overall)}</small></div>
-  <div class="meta">${d.url} · ${d.pages} pagina/e${date ? ' · ' + date : ''}</div>
+  <div class="score">${d.overall}<small>/100 · ${verdict(d.overall, lang)}</small></div>
+  <div class="meta">${d.url} · ${t('report.pagesShort', { n: d.pages })}${date ? ' · ' + date : ''}</div>
   <table>${rows}</table>
   ${fixes}
-  <footer>Generato da Beacon 🔦 — GEO / AI-readiness checker.</footer>
+  <footer>${t('report.html.footer')}</footer>
 </body></html>`;
 }

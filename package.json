@@ -19,7 +19,8 @@
     "./guard": "./src/guard.js",
     "./render": "./src/render.js",
     "./report": "./src/report.js",
-    "./llmstxt": "./src/llmstxt.js"
+    "./llmstxt": "./src/llmstxt.js",
+    "./messages": "./src/messages/index.js"
   },
   "scripts": {
     "test": "node test.js",

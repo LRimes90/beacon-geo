@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { fetchText, head, parseRobots, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
 import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeOffsite, analyzeRights, analyzeTech, CATEGORY_LABELS } from './src/analyzers.js';
+import { makeT, normalizeLang } from './src/messages/index.js';
 import { generateLlmsTxt } from './src/llmstxt.js';
 import { renderHtml, htmlToPdf } from './src/render.js';
 import { toMarkdown, toHtml } from './src/report.js';
@@ -21,7 +22,11 @@ function normalizeUrl(input) {
   return new URL(u).href;
 }
 
-export async function audit(rawUrl, { renderJs = false } = {}) {
+// i18n: `lang` (default 'it') seleziona la lingua di check, fix e notice — la CLI
+// e le chiamate esistenti restano invariate (fallback italiano).
+export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
+  const L = normalizeLang(lang);
+  const t = makeT(L);
   const url = normalizeUrl(rawUrl);
   const origin = new URL(url).origin;
   const host = new URL(url).host;
@@ -59,7 +64,7 @@ export async function audit(rawUrl, { renderJs = false } = {}) {
     tdmrep: tdmrep.ok,
     license: /<link[^>]+rel=["\']license["\']/i.test(html),
     contentSignal: /content-signal/i.test(robotsTxt),
-  });
+  }, L);
 
   // 5) Common Crawl best-effort (mai bloccante) + rendering JS opzionale (on-demand)
   const [inCommonCrawl, render] = await Promise.all([
@@ -70,11 +75,11 @@ export async function audit(rawUrl, { renderJs = false } = {}) {
 
   // 6) analizzatori (funzioni pure)
   const results = {
-    access: analyzeAccess({ robotsAllowed, liveFetch }),
-    agentFiles: analyzeAgentFiles(files),
-    structured: analyzeStructured(html),
-    readability: analyzeReadability({ served: html, rendered: renderedHtml }),
-    offsite: analyzeOffsite({ ccbotAllowed: robotsAllowed['CCBot'], inCommonCrawl }),
+    access: analyzeAccess({ robotsAllowed, liveFetch }, L),
+    agentFiles: analyzeAgentFiles(files, L),
+    structured: analyzeStructured(html, L),
+    readability: analyzeReadability({ served: html, rendered: renderedHtml }, L),
+    offsite: analyzeOffsite({ ccbotAllowed: robotsAllowed['CCBot'], inCommonCrawl }, L),
   };
 
   // 7) punteggio complessivo pesato
@@ -90,16 +95,16 @@ export async function audit(rawUrl, { renderJs = false } = {}) {
     noindex,
     viewport: /<meta[^>]+name=["']viewport["']/i.test(html),
     statusOk: page.ok,
-  });
+  }, L);
 
   // avviso quando il risultato rischia di essere fuorviante (non un errore: l'analisi c'è comunque)
   const words = wordCount(html);
   let notice = null;
-  if (!page.ok) notice = { type: 'unreachable', msg: 'Non sono riuscito a scaricare la pagina (irraggiungibile, timeout o bloccata dal server). Il punteggio potrebbe non essere attendibile.' };
-  else if (noindex) notice = { type: 'noindex', msg: 'La pagina è impostata su "noindex": chiede a motori e AI di NON indicizzarla. Se vuoi essere trovato, rimuovi il noindex.' };
-  else if (words < 60 && !renderJs) notice = { type: 'maybe-spa', msg: 'La pagina serve pochissimo HTML: probabilmente carica i contenuti via JavaScript. Riprova con il rendering JS per un\'analisi accurata.' };
+  if (!page.ok) notice = { type: 'unreachable', msg: t('notice.unreachable') };
+  else if (noindex) notice = { type: 'noindex', msg: t('notice.noindex') };
+  else if (words < 60 && !renderJs) notice = { type: 'maybe-spa', msg: t('notice.maybeSpa') };
 
-  return { url, host, fetchedOk: page.ok, overall, categories: results, rights, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
+  return { url, host, lang: L, fetchedOk: page.ok, overall, categories: results, rights, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
 }
 
 async function commonCrawl(host) {

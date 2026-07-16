@@ -13,7 +13,7 @@ const OVERLAY_SRC = `(function(){var s=document.createElement('style');s.textCon
 const BOOKMARKLET = 'javascript:' + encodeURIComponent(OVERLAY_SRC);
 
 export default function A11y() {
-  const { t } = useLang();
+  const { t, lang } = useLang(); // lang: inviata all'API → check e fix del motore nella lingua della UI
   const [url, setUrl] = useState('');
   const [deep, setDeep] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ export default function A11y() {
     e.preventDefault();
     setLoading(true); setErr(''); setRes(null);
     try {
-      const r = await fetch('/api/a11y', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, deep, turnstileToken: tk }) });
+      const r = await fetch('/api/a11y', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, deep, turnstileToken: tk, lang }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || t('Analisi fallita — riprova tra poco.'));
       setRes(data);

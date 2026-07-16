@@ -10,7 +10,7 @@ const mark = (st) => (st === 'good' ? '✓' : st === 'crit' ? '✕' : '▲');
 const verdict = (s) => (s >= 90 ? 'Ottimo (Lighthouse >90)' : s >= 50 ? 'Da migliorare' : 'Critico');
 
 export default function Perf() {
-  const { t } = useLang();
+  const { t, lang } = useLang(); // lang: inviata all'API → locale PageSpeed nella lingua della UI
   const [url, setUrl] = useState('');
   const [strategy, setStrategy] = useState('mobile');
   const [loading, setLoading] = useState(false);
@@ -22,7 +22,7 @@ export default function Perf() {
     e.preventDefault();
     setLoading(true); setErr(''); setRes(null);
     try {
-      const r = await fetch('/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, strategy, turnstileToken: tk }) });
+      const r = await fetch('/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, strategy, turnstileToken: tk, lang }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || t('Analisi fallita — riprova tra poco.'));
       setRes(data);

@@ -1,5 +1,9 @@
 // app/api/statement/route.js — genera la bozza di dichiarazione dai dati già scansionati.
 // Non ri-scansiona: riceve il risultato dell'audit a11y che il client ha in mano.
+// i18n (fase 2): VOLUTAMENTE senza `lang`. La dichiarazione è un documento legale
+// ancorato alla normativa italiana/UE (Legge Stanca, EAA): tradurne il template
+// richiede revisione giuridica per paese, non una traduzione meccanica → fase 3.
+// NB: le criticità elencate arrivano dall'audit del client e sono già nella lingua della scansione.
 import { generateStatement } from 'beacon-geo/statement';
 
 export const runtime = 'nodejs';
