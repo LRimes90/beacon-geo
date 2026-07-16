@@ -1,6 +1,8 @@
 'use client';
 import { useState } from 'react';
 import ToolNav from '../nav';
+import Turnstile from '../turnstile';
+import { useLang, Rich } from '../i18n';
 
 const color = (s) => (s >= 80 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : s >= 40 ? 'var(--mid)' : 'var(--crit)');
 const pin = (st) => (st === 'good' ? 'pin' : st === 'crit' ? 'pc' : 'pn');
@@ -11,20 +13,22 @@ const OVERLAY_SRC = `(function(){var s=document.createElement('style');s.textCon
 const BOOKMARKLET = 'javascript:' + encodeURIComponent(OVERLAY_SRC);
 
 export default function A11y() {
+  const { t } = useLang();
   const [url, setUrl] = useState('');
   const [deep, setDeep] = useState(false);
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState('');
   const [copied, setCopied] = useState(false);
+  const [tk, setTk] = useState(''); // token Turnstile (vuoto = inerte)
 
   async function run(e) {
     e.preventDefault();
     setLoading(true); setErr(''); setRes(null);
     try {
-      const r = await fetch('/api/a11y', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, deep }) });
+      const r = await fetch('/api/a11y', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, deep, turnstileToken: tk }) });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'Analisi fallita — riprova tra poco.');
+      if (!r.ok) throw new Error(data.error || t('Analisi fallita — riprova tra poco.'));
       setRes(data);
     } catch (e2) { setErr(String(e2.message || e2)); }
     finally { setLoading(false); }
@@ -55,19 +59,21 @@ export default function A11y() {
 
       <main className="wrap">
         <div className="hero">
-          <div className="kicker">Accessibilità · WCAG 2.1 · European Accessibility Act</div>
-          <h1>Il tuo sito è <span className="hl">accessibile</span>?</h1>
-          <p className="lede">Controlli statici a colpo sicuro sull'HTML servito — quelli che si possono verificare in automatico senza margine d'errore.</p>
+                    <a className="back-home" href="https://lucarimediotti.com">&larr; {t('Torna a lucarimediotti.com')}</a>
+          <div className="kicker">{t('Accessibilità · WCAG 2.1 · European Accessibility Act')}</div>
+          <h1><Rich s="Il tuo sito è *accessibile*?" /></h1>
+          <p className="lede">{t("Controlli statici a colpo sicuro sull'HTML servito — quelli che si possono verificare in automatico senza margine d'errore.")}</p>
         </div>
 
         <form onSubmit={run}>
-          <input type="text" placeholder="iltuosito.it" value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Indirizzo del sito da analizzare" />
-          <button type="submit" className="go" disabled={loading || !url}>{loading ? 'Analizzo…' : 'Controlla →'}</button>
+          <input type="text" placeholder={t('iltuosito.it')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito da analizzare')} />
+          <button type="submit" className="go" disabled={loading || !url}>{loading ? t('Analizzo…') : t('Controlla →')}</button>
         </form>
-        <label className="opt"><input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} /> Analisi approfondita con axe-core (rendering reale: contrasto, ARIA, ~50% dei criteri)</label>
+        <label className="opt"><input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} /> {t('Analisi approfondita con axe-core (rendering reale: contrasto, ARIA, ~50% dei criteri)')}</label>
+        <Turnstile onToken={setTk} />
 
         <div className="notice">
-          <span><strong>Non è un audit di conformità.</strong> Anche con axe-core il test automatico copre al massimo ~metà dei criteri WCAG. Tastiera, ordine di focus e senso del contenuto per screen reader richiedono verifica umana.</span>
+          <span><strong>{t('Non è un audit di conformità.')}</strong> {t('Anche con axe-core il test automatico copre al massimo ~metà dei criteri WCAG. Tastiera, ordine di focus e senso del contenuto per screen reader richiedono verifica umana.')}</span>
         </div>
 
         {err && <p className="err">⚠ {err}</p>}
@@ -78,13 +84,13 @@ export default function A11y() {
               <div style={{ fontFamily: 'var(--serif)', fontWeight: 700, fontSize: 44, color: color(a.score) }}>{a.score}<span style={{ fontSize: 18, color: 'var(--muted)' }}>/100</span></div>
               <div className="rmeta">
                 <div className="host">{res.url}</div>
-                <div className="sub">controlli statici superati (i "info" non contano nel punteggio)</div>
-                <button type="button" className="dl" onClick={downloadStatement}>⬇ Bozza dichiarazione di accessibilità</button>
+                <div className="sub">{t('controlli statici superati (i "info" non contano nel punteggio)')}</div>
+                <button type="button" className="dl" onClick={downloadStatement}>⬇ {t('Bozza dichiarazione di accessibilità')}</button>
               </div>
             </div>
 
             <div className="rights" style={{ marginTop: 22 }}>
-              <div className="rt">Controlli WCAG 2.1 <span className="info">— statici, dall'HTML servito</span></div>
+              <div className="rt">{t('Controlli WCAG 2.1')} <span className="info">— {t("statici, dall'HTML servito")}</span></div>
               <ul>
                 {a.checks.map((c, i) => (
                   <li key={i}><span className={pin(c.status)}>{mark(c.status)}</span> {c.name} — {c.detail}</li>
@@ -94,24 +100,24 @@ export default function A11y() {
 
             {res.axe && res.axe.ok && (
               <div className="rights" style={{ marginTop: 18 }}>
-                <div className="rt">axe-core · WCAG 2.1 A/AA <span className="info">— {res.axe.counts.violations} violazioni · {res.axe.counts.passes} passati · {res.axe.counts.incomplete} da verificare a mano</span></div>
+                <div className="rt">axe-core · WCAG 2.1 A/AA <span className="info">— {res.axe.counts.violations} {t('violazioni')} · {res.axe.counts.passes} {t('passati')} · {res.axe.counts.incomplete} {t('da verificare a mano')}</span></div>
                 {res.axe.findings.length === 0
-                  ? <p style={{ marginTop: 12, color: 'var(--good)', fontSize: 14 }}>✓ Nessuna violazione automatica rilevata da axe-core.</p>
+                  ? <p style={{ marginTop: 12, color: 'var(--good)', fontSize: 14 }}>✓ {t('Nessuna violazione automatica rilevata da axe-core.')}</p>
                   : <ul className="axelist">
                       {res.axe.findings.map((f, i) => (
                         <li key={i}>
                           <div className="afind">
                             <span className={pin(f.status)}>{mark(f.status)}</span>
-                            <span><a href={f.helpUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>{f.help}</a> — <em>{f.impact}</em>, {f.nodes} {f.nodes === 1 ? 'elemento' : 'elementi'}</span>
+                            <span><a href={f.helpUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>{f.help}</a> — <em>{f.impact}</em>, {f.nodes} {f.nodes === 1 ? t('elemento') : t('elementi')}</span>
                           </div>
                           <details className="remedy">
-                            <summary>Come correggere</summary>
+                            <summary>{t('Come correggere')}</summary>
                             {f.remedy?.why && <p className="why">{f.remedy.why}</p>}
                             {f.failureSummary && <pre className="fsum">{f.failureSummary}</pre>}
-                            {f.remedy?.before && <div className="ba"><span className="bl">prima</span><pre>{f.remedy.before}</pre></div>}
+                            {f.remedy?.before && <div className="ba"><span className="bl">{t('prima')}</span><pre>{f.remedy.before}</pre></div>}
                             {f.remedy?.after
-                              ? <div className="ba"><span className="al">dopo</span><pre>{f.remedy.after}</pre></div>
-                              : <p className="why">Esempio e dettaglio completo: <a href={f.helpUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>guida axe ↗</a></p>}
+                              ? <div className="ba"><span className="al">{t('dopo')}</span><pre>{f.remedy.after}</pre></div>
+                              : <p className="why">{t('Esempio e dettaglio completo:')} <a href={f.helpUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>{t('guida axe ↗')}</a></p>}
                           </details>
                         </li>
                       ))}
@@ -121,13 +127,13 @@ export default function A11y() {
 
             {res.axe && !res.axe.ok && (
               <div className="notice" style={{ marginTop: 18 }}>
-                <span>Scansione approfondita non disponibile: {res.axe.reason}</span>
+                <span>{t('Scansione approfondita non disponibile:')} {res.axe.reason}</span>
               </div>
             )}
 
             {fixes.length > 0 && (
               <div className="fixes">
-                <h3>Da sistemare</h3>
+                <h3>{t('Da sistemare')}</h3>
                 <ul>{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>
               </div>
             )}
@@ -135,11 +141,11 @@ export default function A11y() {
         )}
 
         <section className="features" style={{ marginTop: 56 }}>
-          <div className="kicker">Overlay diagnostico</div>
-          <p className="fintro">Trascina il pulsante nella barra dei preferiti, poi cliccalo su qualsiasi pagina: evidenzia immagini senza <code>alt</code>, campi senza etichetta e la lingua mancante, direttamente sul sito. <strong>È diagnostico — mostra i problemi, non li corregge</strong> (nessun widget che patcha il DOM).</p>
+          <div className="kicker">{t('Overlay diagnostico')}</div>
+          <p className="fintro">{t('Trascina il pulsante nella barra dei preferiti, poi cliccalo su qualsiasi pagina: evidenzia immagini senza')} <code>alt</code>, {t('campi senza etichetta e la lingua mancante, direttamente sul sito.')} <strong>{t('È diagnostico — mostra i problemi, non li corregge')}</strong> {t('(nessun widget che patcha il DOM).')}</p>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <a className="dl" href={BOOKMARKLET} onClick={(e) => e.preventDefault()} draggable="true" style={{ cursor: 'grab' }}>🔦 Beacon overlay</a>
-            <button type="button" className="dl" onClick={copyBookmarklet}>{copied ? '✓ Copiato' : 'Copia il codice'}</button>
+            <button type="button" className="dl" onClick={copyBookmarklet}>{copied ? '✓ ' + t('Copiato') : t('Copia il codice')}</button>
           </div>
         </section>
       </main>
