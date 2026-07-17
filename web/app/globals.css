@@ -50,7 +50,9 @@ body::before{
    .lang-switch escono dal flow e diventano tendine controllate da
    .menu-open / .lang-open sulla .topbar (che è sticky → containing block). */
 @media (max-width:768px){
-  .bar-in{ gap:8px; }
+  /* Stesse metriche dell'header di lucarimediotti.com: padding 16px (→ header
+     alto 74px con le icone da 42px) e gap 12px tra bandiera e hamburger. */
+  .bar-in{ gap:12px; padding:16px; }
   .brand .tag{ display:none; }
 
   /* Bandiera della lingua attiva — stesse misure del trigger di lucarimediotti.com */
@@ -241,7 +243,7 @@ button.go:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
 }
 
 @media (max-width:480px){
-  .bar-in{padding:12px 16px}
+  .bar-in{padding:16px} /* header 74px come lucarimediotti.com (icone 42 + 2×16) */
   .brand .tag{display:none}
   .ghlink{white-space:nowrap}
 }
