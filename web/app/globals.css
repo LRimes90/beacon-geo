@@ -41,19 +41,72 @@ body::before{
 .toollink{font:600 13px var(--mono); color:var(--muted); text-decoration:none; border:1px solid transparent; border-radius:999px; padding:7px 13px; transition:.15s}
 .toollink:hover{color:var(--ink); border-color:var(--card-line)}
 .toollink.on{color:var(--accent); border-color:var(--card-line); background:rgba(66,209,200,.08)}
-/* Nav responsive: sotto i 600px la barra strumenti scorre in orizzontale
-   invece di uscire dallo schermo (link "Report completo" tagliato). Desktop invariato. */
-@media (max-width:600px){
-  .toolmenu{
-    flex:1 1 auto; min-width:0;                 /* può restringersi accanto al brand */
-    overflow-x:auto; overflow-y:hidden;         /* scroll orizzontale pulito */
-    -webkit-overflow-scrolling:touch;
-    scrollbar-width:none;                        /* nasconde scrollbar (Firefox) */
-    -ms-overflow-style:none;                     /* Edge legacy */
-    justify-content:flex-start;
+/* Controlli solo-mobile (iniettati nel markup, nascosti su desktop). */
+.lang-trigger, .burger { display: none; }
+.lang .lang-name { display: none; } /* desktop: solo bandiera; il nome appare nella tendina mobile */
+
+/* MENU MOBILE ≤768px: hamburger + tendine (stesso pattern di lucarimediotti.com).
+   Header = brand · bandiera lingua attiva · hamburger. La .toolmenu e la
+   .lang-switch escono dal flow e diventano tendine controllate da
+   .menu-open / .lang-open sulla .topbar (che è sticky → containing block). */
+@media (max-width:768px){
+  .bar-in{ gap:8px; }
+  .brand .tag{ display:none; }
+
+  /* Bandiera della lingua attiva */
+  .lang-trigger{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:40px; height:40px; margin-left:auto; padding:0;
+    background:none; border:0; font-size:22px; line-height:1; cursor:pointer;
   }
-  .toolmenu::-webkit-scrollbar{display:none}     /* nasconde scrollbar (Chrome/Safari) */
-  .toollink{flex:none; white-space:nowrap}       /* i link non si comprimono né vanno a capo */
+
+  /* Hamburger → X */
+  .burger{
+    display:inline-flex; flex-direction:column; justify-content:center; gap:5px;
+    width:40px; height:40px; padding:9px; background:none; border:0; cursor:pointer;
+  }
+  .burger span{
+    display:block; width:100%; height:2px; border-radius:2px; background:var(--ink);
+    transition:transform .3s ease, opacity .2s ease;
+  }
+  .burger.open span:nth-child(1){ transform:translateY(7px) rotate(45deg); }
+  .burger.open span:nth-child(2){ opacity:0; }
+  .burger.open span:nth-child(3){ transform:translateY(-7px) rotate(-45deg); }
+
+  /* Tendina voci (full width, sotto la barra) */
+  .toolmenu{
+    position:absolute; top:100%; left:0; right:0;
+    flex-direction:column; align-items:stretch; gap:0;
+    background:var(--bg); border-bottom:1px solid var(--card-line);
+    max-height:0; overflow:hidden; opacity:0; visibility:hidden;
+    transition:max-height .35s ease, opacity .25s ease, visibility .35s;
+    box-shadow:0 18px 36px rgba(0,0,0,.4); z-index:9;
+  }
+  .topbar.menu-open .toolmenu{ max-height:75vh; overflow:auto; opacity:1; visibility:visible; padding:6px 0 10px; }
+  .toolmenu .toollink{
+    display:block; width:100%; border:0; border-radius:0;
+    border-bottom:1px solid var(--card-line); padding:14px 22px; font-size:15px;
+  }
+  .toolmenu .toollink:last-child{ border-bottom:0; }
+  .toolmenu .toollink.on{ background:rgba(66,209,200,.08); }
+
+  /* Tendina lingue (sotto la bandiera-trigger). Prefisso `.topbar` = 2 classi:
+     batte per SPECIFICITÀ la regola base `.lang-switch{display:grid}` (1 classe)
+     che nel file viene dopo questa media query (le media query non aggiungono
+     specificità, quindi senza il prefisso vincerebbe la base). */
+  .topbar .lang-switch{
+    position:absolute; top:100%; right:12px;
+    display:none; margin:0; grid-template-columns:none;
+    background:var(--bg); border:1px solid var(--card-line); border-radius:0 0 10px 10px;
+    box-shadow:0 18px 36px rgba(0,0,0,.4); padding:6px; z-index:10;
+  }
+  .topbar.lang-open .lang-switch{ display:flex; flex-direction:column; }
+  .topbar .lang-switch .lang{
+    display:flex; align-items:center; gap:10px; width:100%;
+    justify-content:flex-start; padding:9px 14px; font-size:20px;
+  }
+  .topbar .lang-switch .lang .lang-name{ display:inline; font:600 14px var(--mono); color:var(--muted); }
+  .topbar .lang-switch .lang.active .lang-name{ color:var(--ink); }
 }
 
 .wrap{position:relative; z-index:1; max-width:920px; margin:0 auto; padding:56px 22px 40px}
