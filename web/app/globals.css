@@ -53,17 +53,17 @@ body::before{
   .bar-in{ gap:8px; }
   .brand .tag{ display:none; }
 
-  /* Bandiera della lingua attiva */
+  /* Bandiera della lingua attiva — stesse misure del trigger di lucarimediotti.com */
   .lang-trigger{
     display:inline-flex; align-items:center; justify-content:center;
-    width:40px; height:40px; margin-left:auto; padding:0;
+    width:42px; height:42px; margin-left:auto; padding:0;
     background:none; border:0; font-size:22px; line-height:1; cursor:pointer;
   }
 
-  /* Hamburger → X */
+  /* Hamburger → X — identico a .lr-burger di lucarimediotti.com (42px, padding 10, gap 5) */
   .burger{
     display:inline-flex; flex-direction:column; justify-content:center; gap:5px;
-    width:40px; height:40px; padding:9px; background:none; border:0; cursor:pointer;
+    width:42px; height:42px; padding:10px; background:none; border:0; cursor:pointer;
   }
   .burger span{
     display:block; width:100%; height:2px; border-radius:2px; background:var(--ink);
