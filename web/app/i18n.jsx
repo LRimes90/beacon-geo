@@ -24,7 +24,8 @@ function readSharedLang() {
   return VALID.includes(v) ? v : null;
 }
 function writeSharedLang(lang) {
-  document.cookie = COOKIE + '=' + encodeURIComponent(lang) + '; path=/; max-age=31536000; SameSite=Lax' + cookieDomain();
+  const secure = location.protocol === 'https:' ? '; Secure' : ''; // Secure solo su HTTPS (non rompe dev http)
+  document.cookie = COOKIE + '=' + encodeURIComponent(lang) + '; path=/; max-age=31536000; SameSite=Lax' + secure + cookieDomain();
 }
 
 const LangCtx = createContext({ lang: 'it', setLang: () => {}, t: (s) => s });

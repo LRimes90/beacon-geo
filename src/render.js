@@ -1,8 +1,11 @@
 // src/render.js — rendering JS OPZIONALE via Playwright (import dinamico).
 // Se 'playwright' non è installato, ritorna { ok:false }: l'analisi procede in modalità no-JS.
 // Attivazione:  npm i playwright  (poi:  node audit.js <url> --js)
+import { assertSafeUrl } from './ssrf-guard.js';
 
 export async function renderHtml(url, { timeout = 20000, ua } = {}) {
+  // Anti-SSRF: valida l'host prima di aprire il browser headless sull'URL utente.
+  try { await assertSafeUrl(url); } catch (e) { return { ok: false, reason: String(e.message || e) }; }
   let pw;
   try {
     pw = await import(/* webpackIgnore: true */ 'playwright'); // dipendenza opzionale
@@ -29,6 +32,8 @@ export async function renderHtml(url, { timeout = 20000, ua } = {}) {
 // contrasto reale, ARIA e focus programmatico sono osservabili. Fallback graceful
 // se playwright o axe-core non sono installati (l'analisi statica procede comunque).
 export async function runAxe(url, { timeout = 25000, ua } = {}) {
+  // Anti-SSRF: valida l'host prima del browser headless.
+  try { await assertSafeUrl(url); } catch (e) { return { ok: false, reason: String(e.message || e) }; }
   let pw, axe;
   try { pw = await import(/* webpackIgnore: true */ 'playwright'); } catch { return { ok: false, reason: 'playwright non installato — esegui: npm i playwright' }; }
   try { axe = (await import(/* webpackIgnore: true */ 'axe-core')).default; } catch { return { ok: false, reason: 'axe-core non installato — esegui: npm i axe-core' }; }

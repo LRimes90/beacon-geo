@@ -1,6 +1,7 @@
 // src/lib.js — rete + parsing HTML (regex-based, MVP senza dipendenze).
 // ponytail: regex invece di cheerio/jsdom — sufficiente per i check dell'MVP;
 // ponytail: upgrade a un parser DOM se i check diventano più fini (es. nesting semantico).
+import { safeFetch, readCapped } from './ssrf-guard.js';
 
 export const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36';
@@ -20,10 +21,11 @@ export async function fetchText(url, { ua = BROWSER_UA, timeout = 15000, retries
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeout);
     try {
-      const res = await fetch(url, { headers: { 'User-Agent': ua, Accept: 'text/html,application/xhtml+xml,*/*' }, redirect: 'follow', signal: ctrl.signal });
-      const body = await res.text();
+      // safeFetch valida l'host (anti-SSRF) a ogni redirect; readCapped limita i byte.
+      const { res, finalUrl } = await safeFetch(url, { headers: { 'User-Agent': ua, Accept: 'text/html,application/xhtml+xml,*/*' }, signal: ctrl.signal });
+      const body = await readCapped(res);
       clearTimeout(timer);
-      return { ok: res.ok, status: res.status, body, finalUrl: res.url };
+      return { ok: res.ok, status: res.status, body, finalUrl };
     } catch (e) {
       clearTimeout(timer);
       last = { ok: false, status: 0, body: '', error: String(e) };
@@ -38,7 +40,8 @@ export async function head(url, { ua = BROWSER_UA, timeout = 8000 } = {}) {
   const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     // GET leggero (molti server non gestiscono bene HEAD); leggiamo solo lo status.
-    const res = await fetch(url, { method: 'GET', headers: { 'User-Agent': ua }, redirect: 'follow', signal: ctrl.signal });
+    // safeFetch applica la validazione anti-SSRF anche qui.
+    const { res } = await safeFetch(url, { method: 'GET', headers: { 'User-Agent': ua }, signal: ctrl.signal });
     return { ok: res.ok, status: res.status };
   } catch { return { ok: false, status: 0 }; }
   finally { clearTimeout(timer); }

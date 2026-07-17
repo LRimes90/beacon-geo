@@ -202,10 +202,11 @@ export default function Home() {
             <div className="fbrand">Beacon <span className="hl">🔦</span></div>
             <p className="fdesc">{t('Suite gratuita che misura cosa vedono del tuo sito le AI, gli screen reader e i motori: GEO, accessibilità (WCAG/EAA) e performance.')}</p>
           </div>
-          <a className="ghlink" href="https://github.com/LRimes90/beacon-geo" target="_blank" rel="noreferrer"><span className="star">★</span> {t('Codice su GitHub')}</a>
+          {/* Link "Codice su GitHub" rimosso: il repo è privato (dava 404).
+              Ripristinare quando/se il repo viene reso pubblico. */}
         </div>
         <div className="foot-bot">
-          <span>© 2026 Beacon · open source</span>
+          <span>© 2026 Beacon</span>
           <span className="flegal">
             {/* Pagine legali del dominio principale (Beacon vive sul sottodominio) */}
             <a href="https://lucarimediotti.com/privacy-policy/">Privacy</a> · <a href="https://lucarimediotti.com/cookie-policy-ue/">Cookie</a> · <a href="https://lucarimediotti.com/termini-e-condizioni/">{t('Termini')}</a>

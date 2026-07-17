@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech } from './src/analyzers.js';
-import { analyzeA11y, summarizeAxe } from './src/a11y.js';
+import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
+import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
 import { summarizePsi } from './src/perf.js';
 import { generateStatement } from './src/statement.js';
 import { remedyFor, REMEDIATION } from './src/remediation.js';
@@ -306,6 +307,32 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const s = { url: 'https://x.com/', host: 'x.com', geo: { error: 'boom' }, a11y: { error: 'boom' }, perf: { ok: false, reason: 'q' } };
   ok(toMarkdownSuite(s, { lang: 'en' }).includes('Not available:'), 'i18n: suite markdown in inglese');
   ok(toHtmlSuite(s, { lang: 'en' }).includes('<html lang="en">'), 'i18n: suite html con lang corretto');
+}
+
+// accessibleFormLabels — controlli con/senza etichetta accessibile
+{
+  const withLabel = '<form><label for="e">Email</label><input id="e" type="text"></form>';
+  ok(accessibleFormLabels(withLabel).total === 1 && accessibleFormLabels(withLabel).labeled === 1, 'form: input con label for → labeled');
+  const noLabel = '<form><input type="text" name="q"></form>';
+  ok(accessibleFormLabels(noLabel).total === 1 && accessibleFormLabels(noLabel).labeled === 0, 'form: input senza label → non labeled');
+  const hidden = '<form><input type="hidden" name="tok"><input type="submit"></form>';
+  ok(accessibleFormLabels(hidden).total === 0, 'form: hidden/submit non richiedono label');
+  const aria = '<textarea aria-label="Messaggio"></textarea>';
+  ok(accessibleFormLabels(aria).labeled === 1, 'form: aria-label conta come etichetta');
+}
+
+// anti-SSRF — blocca risorse interne, passa IP pubblici (solo IP: niente DNS/rete nei test)
+{
+  ok(isBlockedIp('127.0.0.1') && isBlockedIp('169.254.169.254') && isBlockedIp('10.0.0.1') && isBlockedIp('192.168.1.1'), 'ssrf: IP interni bloccati');
+  ok(!isBlockedIp('8.8.8.8') && !isBlockedIp('1.1.1.1'), 'ssrf: IP pubblici ammessi');
+  ok(isBlockedIp('::1') && isBlockedIp('fd00::1'), 'ssrf: loopback/ULA IPv6 bloccati');
+  let blocked = false;
+  try { await assertSafeUrl('http://127.0.0.1/'); } catch { blocked = true; }
+  ok(blocked, 'ssrf: assertSafeUrl blocca 127.0.0.1');
+  let schemeBlocked = false;
+  try { await assertSafeUrl('file:///etc/passwd'); } catch { schemeBlocked = true; }
+  ok(schemeBlocked, 'ssrf: assertSafeUrl blocca schema file://');
+  ok((await assertSafeUrl('http://1.1.1.1/')).hostname === '1.1.1.1', 'ssrf: assertSafeUrl passa IP pubblico');
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

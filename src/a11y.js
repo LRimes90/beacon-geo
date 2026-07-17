@@ -14,10 +14,27 @@ const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 const pct = (a, b) => (b ? (a / b) * 100 : 0);
 
 // Conta i controlli di form e quanti hanno un'etichetta accessibile.
-// Vedi la richiesta "Learn by Doing": decisione di prodotto su cosa conta come label.
+// "labeled" = ha aria-label/aria-labelledby, un <label for=id> che lo referenzia,
+// oppure un title. Esclusi i controlli che non richiedono label (hidden/submit/
+// button/image/reset). Analisi statica su HTML servito (come il resto del modulo):
+// la label IMPLICITA (input dentro <label>) può sfuggire → axe in deep la copre.
 export function accessibleFormLabels(html) {
-  // TODO(human)
-  return { total: 0, labeled: 0 };
+  const labelFor = new Set(
+    [...html.matchAll(/<label\b[^>]*\bfor\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1])
+  );
+  const controls = html.match(/<(input|select|textarea)\b[^>]*>/gi) || [];
+  const skip = /\btype\s*=\s*["'](hidden|submit|button|image|reset)["']/i;
+  let total = 0, labeled = 0;
+  for (const tag of controls) {
+    if (/^<input/i.test(tag) && skip.test(tag)) continue; // non richiede label
+    total++;
+    const id = (tag.match(/\bid\s*=\s*["']([^"']+)["']/i) || [])[1];
+    const hasAria = /\baria-label\s*=\s*["'][^"']+["']/i.test(tag) ||
+                    /\baria-labelledby\s*=\s*["'][^"']+["']/i.test(tag);
+    const hasTitle = /\btitle\s*=\s*["'][^"']+["']/i.test(tag);
+    if (hasAria || (id && labelFor.has(id)) || hasTitle) labeled++;
+  }
+  return { total, labeled };
 }
 
 // gerarchia titoli: quanti H1 e se qualche livello è saltato (es. H3 senza H2).
