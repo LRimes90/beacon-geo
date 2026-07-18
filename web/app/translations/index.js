@@ -7,11 +7,13 @@ import { pt } from './pt';
 
 export const DICTS = { en, de, fr, es, pt };
 
+// iso = ISO 3166-1 alpha-2 per flag-icons (bandiere SVG). 'en' usa GB.
+// Niente emoji-bandiera: Windows non le renderizza (mostra le due lettere).
 export const LANGS = [
-  { code: 'it', flag: '🇮🇹', label: 'Italiano' },
-  { code: 'en', flag: '🇬🇧', label: 'English' },
-  { code: 'de', flag: '🇩🇪', label: 'Deutsch' },
-  { code: 'fr', flag: '🇫🇷', label: 'Français' },
-  { code: 'es', flag: '🇪🇸', label: 'Español' },
-  { code: 'pt', flag: '🇵🇹', label: 'Português' },
+  { code: 'it', iso: 'it', label: 'Italiano' },
+  { code: 'en', iso: 'gb', label: 'English' },
+  { code: 'de', iso: 'de', label: 'Deutsch' },
+  { code: 'fr', iso: 'fr', label: 'Français' },
+  { code: 'es', iso: 'es', label: 'Español' },
+  { code: 'pt', iso: 'pt', label: 'Português' },
 ];

@@ -1,3 +1,4 @@
+import 'flag-icons/css/flag-icons.min.css';
 import './globals.css';
 import BackToTop from './back-to-top';
 import { LangProvider } from './i18n';
