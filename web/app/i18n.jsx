@@ -81,7 +81,7 @@ export function LangSwitch() {
           aria-label={l.label}
           aria-pressed={lang === l.code}
           onClick={() => setLang(l.code)}
-        >{l.flag}</button>
+        ><span className={`fi fi-${l.iso} lang-flag`} aria-hidden="true"></span></button>
       ))}
     </div>
   );

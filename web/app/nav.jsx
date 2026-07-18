@@ -44,7 +44,7 @@ export default function ToolNav({ active, tag }) {
               className={'lang' + (l.code === lang ? ' active' : '')}
               aria-label={l.label} aria-pressed={l.code === lang}
               onClick={() => { setLang(l.code); setLangOpen(false); }}>
-              {l.flag}<span className="lang-name">{l.label}</span>
+              <span className={`fi fi-${l.iso} lang-flag`} aria-hidden="true"></span><span className="lang-name">{l.label}</span>
             </button>
           ))}
         </div>
@@ -53,7 +53,7 @@ export default function ToolNav({ active, tag }) {
         <button className="lang-trigger" type="button"
           aria-label="Lingua" aria-expanded={langOpen}
           onClick={() => { setLangOpen((o) => !o); setMenuOpen(false); }}>
-          {activeLang.flag}
+          <span className={`fi fi-${activeLang.iso} lang-flag`} aria-hidden="true"></span>
         </button>
 
         {/* Solo mobile: hamburger → X, apre la tendina voci. */}
