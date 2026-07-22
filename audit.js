@@ -107,6 +107,80 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   return { url, host, lang: L, fetchedOk: page.ok, overall, categories: results, rights, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
 }
 
+export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
+  const L = normalizeLang(lang);
+  const url = normalizeUrl(rawUrl);
+  const origin = new URL(url).origin;
+  const host = new URL(url).host;
+
+  const robotsRes = await fetchText(origin + '/robots.txt');
+  const robotsTxt = robotsRes.ok ? robotsRes.body : '';
+  const robots = parseRobots(robotsTxt);
+
+  const robotsAllowed = {};
+  for (const ua of AI_CRAWLERS) robotsAllowed[ua] = robotsTxt ? robots.isAllowed(ua, '/') : true;
+
+  const liveFetch = {};
+  for (const ua of LIVE_UA) liveFetch[ua] = { ok: true, status: 200, snapshot: true };
+
+  const paths = {
+    llmsTxt: '/llms.txt', sitemap: '/sitemap.xml', skillMd: '/skill.md',
+    mcpJson: '/.well-known/mcp.json', agentSkills: '/.well-known/agent-skills/index.json',
+  };
+  const probes = await Promise.all(Object.entries(paths).map(([k, p]) => head(origin + p).then((r) => [k, r.ok])));
+  const files = Object.fromEntries(probes);
+  files.robotsTxt = robotsRes.ok;
+  files.sitemap = files.sitemap || robots.sitemaps.length > 0;
+
+  const tdmrep = await head(origin + '/.well-known/tdmrep.json');
+  const rights = analyzeRights({
+    tdmrep: tdmrep.ok,
+    license: /<link[^>]+rel=["\']license["\']/i.test(html),
+    contentSignal: /content-signal/i.test(robotsTxt),
+  }, L);
+
+  const inCommonCrawl = await commonCrawl(host);
+  const results = {
+    access: analyzeAccess({ robotsAllowed, liveFetch }, L),
+    agentFiles: analyzeAgentFiles(files, L),
+    structured: analyzeStructured(html, L),
+    readability: analyzeReadability({ served: html, rendered: null }, L),
+    offsite: analyzeOffsite({ ccbotAllowed: robotsAllowed['CCBot'], inCommonCrawl }, L),
+  };
+
+  let total = 0, wsum = 0;
+  for (const k of Object.keys(CATEGORY_LABELS)) { total += results[k].score * WEIGHTS[k]; wsum += WEIGHTS[k]; }
+  const overall = Math.round(total / wsum);
+
+  const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html) || /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots/i.test(html);
+  const tech = analyzeTech({
+    https: url.startsWith('https://'),
+    noindex,
+    viewport: /<meta[^>]+name=["']viewport["']/i.test(html),
+    statusOk: true,
+  }, L);
+
+  const words = wordCount(html);
+  let notice = { type: 'snapshot', msg: 'Audit eseguito su snapshot HTML fornito, non su fetch pubblico della pagina.' };
+  if (words < 60) notice = { type: 'snapshot-short', msg: 'Snapshot HTML molto breve: il risultato potrebbe essere incompleto.' };
+
+  return {
+    url,
+    host,
+    lang: L,
+    fetchedOk: true,
+    snapshot: true,
+    overall,
+    categories: results,
+    rights,
+    tech,
+    files,
+    html,
+    notice,
+    render: { active: false, ok: false, reason: 'snapshot HTML' },
+  };
+}
+
 async function commonCrawl(host) {
   try {
     const ctrl = new AbortController();
