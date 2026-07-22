@@ -14,6 +14,7 @@ import { rateLimit, verifyTurnstile } from './src/guard.js';
 import { renderHtml } from './src/render.js';
 import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
+import { auditHtmlSnapshot } from './audit.js';
 import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
 
 let n = 0;
@@ -52,6 +53,15 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
 
   const empty = analyzeStructured('<div></div>');
   ok(empty.score < 40, 'HTML vuoto → structured critico: ' + empty.score);
+}
+
+// audit.js — snapshot HTML per bozze non pubbliche
+{
+  const html = '<!doctype html><html lang="it"><head><title>Articolo AI e WordPress</title><meta name="description" content="Una descrizione concreta abbastanza lunga per il test"><meta name="viewport" content="width=device-width, initial-scale=1"><script type="application/ld+json">{"@type":"BlogPosting","headline":"Articolo AI e WordPress"}</script></head><body><main><article><h1>Articolo AI e WordPress</h1><p>' + 'testo '.repeat(320) + '</p><img src="/x.webp" alt="Diagramma AI per WordPress"></article></main></body></html>';
+  const r = await auditHtmlSnapshot('https://example.com/articolo-ai-wordpress/', html);
+  ok(r.snapshot === true, 'audit snapshot: flag snapshot presente');
+  ok(r.fetchedOk === true && r.overall > 0, 'audit snapshot: risultato valido senza fetch pagina');
+  ok(r.notice.type === 'snapshot', 'audit snapshot: notice dedicata');
 }
 {
   const acc = analyzeAccess({
