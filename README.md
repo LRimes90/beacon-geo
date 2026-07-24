@@ -28,7 +28,8 @@ node audit.js stripe.com --js       # + rendering JS (delta no-JS vs post-render
 node audit.js stripe.com --json|--md|--html|--pdf|--llms
 node crawl.js stripe.com [--max 8]  # punteggio di SITO (multi-pagina)
 node batch.js [urls...]             # analisi parallela multi-sito
-node test.js                        # 78 assert sulle funzioni pure
+node compare.js tuosito.com c1.com c2.com  # confronto competitor (GEO+a11y+perf, primo = riferimento) → beacon-compare.html
+node test.js                        # 108 assert sulle funzioni pure
 ```
 
 ## Come funziona l'accessibilità

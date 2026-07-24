@@ -6,6 +6,7 @@ web/out/
 
 # output generati dal tool
 beacon-results.json
+beacon-compare.html
 *.pdf
 
 # storico scansioni (dati locali, non versionati)
