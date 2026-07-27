@@ -8,7 +8,9 @@ const AXES = [
   { key: 'a11y', label: 'Accessibilità' },
   { key: 'perf', label: 'Performance' },
 ];
-const col = (s) => (s == null ? '#8A9896' : s >= 80 ? '#2E8B5F' : s >= 60 ? '#B4841F' : s >= 40 ? '#C77D2E' : '#C0492F');
+const col = (s) => (!Number.isFinite(s) ? '#8A9896' : s >= 80 ? '#2E8B5F' : s >= 60 ? '#B4841F' : s >= 40 ? '#C77D2E' : '#C0492F');
+// mostra un punteggio, o '—' se assente/non-finito (l'engine reale non produce NaN, ma il render resta robusto)
+const fmt = (v) => (Number.isFinite(v) ? v : '—');
 // esc: iniettiamo l'host dei siti analizzati nel report → confine di fiducia
 const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -33,30 +35,36 @@ function pickScores(s) {
 //                 0 se il target è in testa · negativo se è indietro · null se il dato del target o del leader manca
 // Pareggi: vince la PRIMA riga col punteggio massimo → essendo rows[0] il target,
 // se pareggia col leader risulta lui "best" (gap 0), senza casi speciali.
+// ponytail: leader identificato per host; con host DUPLICATI (stesso URL passato 2 volte) la 🥇
+// va alla prima occorrenza, non per forza alla riga col valore più alto. URL distinti attesi.
 function axisSummary(rows) {
   const best = {}, gaps = {};
   for (const { key } of AXES) {
-    const valid = rows.map((r) => r[key]).filter((v) => v != null);
+    // Number.isFinite esclude null/undefined/NaN/Infinity in un colpo → leader sempre robusto
+    const valid = rows.map((r) => r[key]).filter((v) => Number.isFinite(v));
     if (!valid.length) { best[key] = null; gaps[key] = null; continue; }
     const max = Math.max(...valid);
     best[key] = rows.find((r) => r[key] === max).host;
     const target = rows[0][key];
-    gaps[key] = target == null ? null : target - max;
+    gaps[key] = Number.isFinite(target) ? target - max : null;
   }
   return { best, gaps };
 }
 
 export function toMarkdownCompare(suites, { brand = 'Beacon' } = {}) {
   const rows = suites.map(pickScores);
+  if (!rows.length) return `# ${brand} · Confronto competitor\n\n_Nessun sito da confrontare._`;
   const { best, gaps } = axisSummary(rows);
+  const awarded = { geo: false, a11y: false, perf: false }; // 🥇 una sola volta per asse (host duplicati)
   const L = [`# ${brand} · Confronto competitor`, '', `Sito di riferimento: **${rows[0].host}**`, ''];
   L.push('| Sito | ' + AXES.map((a) => a.label).join(' | ') + ' |');
   L.push('|---|' + '---|'.repeat(AXES.length));
   rows.forEach((r, i) => {
     const cells = AXES.map((a) => {
       const v = r[a.key];
-      const lead = best[a.key] === r.host ? ' 🥇' : '';
-      return (v == null ? '—' : v) + lead;
+      let lead = '';
+      if (!awarded[a.key] && best[a.key] === r.host) { awarded[a.key] = true; lead = ' 🥇'; }
+      return fmt(v) + lead;
     });
     L.push(`| ${i === 0 ? '**' + r.host + '**' : r.host} | ${cells.join(' | ')} |`);
   });
@@ -71,13 +79,16 @@ export function toMarkdownCompare(suites, { brand = 'Beacon' } = {}) {
 
 export function toHtmlCompare(suites, { date = '', brand = 'Beacon' } = {}) {
   const rows = suites.map(pickScores);
+  if (!rows.length) return `<!doctype html><html lang="it"><head><meta charset="utf-8"><title>${esc(brand)} · Confronto</title></head><body><p>Nessun sito da confrontare.</p></body></html>`;
   const { best, gaps } = axisSummary(rows);
+  const awarded = { geo: false, a11y: false, perf: false }; // ★ una sola volta per asse (host duplicati)
   const head = AXES.map((a) => `<th>${esc(a.label)}</th>`).join('');
   const body = rows.map((r, i) => {
     const cells = AXES.map((a) => {
       const v = r[a.key];
-      const win = best[a.key] === r.host;
-      return `<td class="n" style="color:${col(v)}${win ? ';font-weight:700' : ''}">${v == null ? '—' : v}${win ? ' <span class="win">★</span>' : ''}</td>`;
+      let win = false;
+      if (!awarded[a.key] && best[a.key] === r.host) { awarded[a.key] = true; win = true; }
+      return `<td class="n" style="color:${col(v)}${win ? ';font-weight:700' : ''}">${fmt(v)}${win ? ' <span class="win">★</span>' : ''}</td>`;
     }).join('');
     return `<tr${i === 0 ? ' class="target"' : ''}><td>${esc(r.host)}${i === 0 ? ' <span class="you">rif.</span>' : ''}</td>${cells}</tr>`;
   }).join('');
