@@ -5,16 +5,18 @@
 // richiede revisione giuridica per paese, non una traduzione meccanica → fase 3.
 // NB: le criticità elencate arrivano dall'audit del client e sono già nella lingua della scansione.
 import { generateStatement } from 'beacon-geo/statement';
+import { reqLang, fail } from '../http.js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req) {
   let body;
-  try { body = await req.json(); } catch { return Response.json({ error: 'JSON non valido' }, { status: 400 }); }
+  try { body = await req.json(); } catch { return fail(reqLang(req), 'api.badJson', 400); }
   const { audit, org, contact } = body || {};
+  const l = reqLang(req, body);
   if (!audit || typeof audit !== 'object' || Array.isArray(audit) || typeof audit.host !== 'string' || !audit.host) {
-    return Response.json({ error: 'Dati audit mancanti' }, { status: 400 });
+    return fail(l, 'api.auditMissing', 400);
   }
   const date = new Date().toISOString().slice(0, 10);
   // Il generatore itera `result.checks` e `axe.findings`: un audit troncato o con
@@ -22,7 +24,8 @@ export async function POST(req) {
   try {
     const md = generateStatement(audit, { org, contact, date });
     return new Response(md, { headers: { 'Content-Type': 'text/markdown; charset=utf-8' } });
-  } catch {
-    return Response.json({ error: 'Dichiarazione non generata: dati audit incompleti' }, { status: 400 });
+  } catch (e) {
+    console.error('[api/statement]', e);
+    return fail(l, 'api.statementIncomplete', 400);
   }
 }

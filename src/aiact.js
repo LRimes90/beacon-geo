@@ -244,6 +244,11 @@ export async function auditAiAct(rawUrl, { lang = 'it' } = {}) {
     // scansione è facoltativa — il questionario resta valido senza di essa.
     scanError: page.ok ? undefined : page.error,
     blocked: page.blocked || undefined,
+    // Chiave i18n del motivo + il dato che l'ha causato: chi risponde all'utente
+    // ricostruisce il messaggio nella sua lingua invece di rigirargli `scanError`
+    // (che è italiano per definizione, essendo pensato per log e CLI).
+    scanCode: page.errorCode || undefined,
+    scanDetail: page.errorDetail || undefined,
     result: signals ? analyzeAiAct(signals, lang) : null,
   };
 }

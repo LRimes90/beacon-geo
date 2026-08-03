@@ -33,6 +33,26 @@ export function msg(lang, key, params) {
   return fill(tpl, params);
 }
 
+// Testo utente per un errore del motore. Gli errori "di input" (normUrl, guard
+// anti-SSRF) portano `code` = chiave di questo catalogo e `detail` = il dato che
+// li ha causati; `message` invece è italiano per costruzione, perché serve ai log
+// e alla CLI. Le route chiamano questa funzione invece di rigirare `e.message`,
+// altrimenti una pagina inglese mostra un errore italiano.
+export function errorText(lang, e) {
+  const code = e && e.code;
+  if (code && (it[code] || DICTS[normalizeLang(lang)]?.[code])) {
+    return msg(lang, code, { detail: e.detail });
+  }
+  // Errore senza code = imprevisto (bug, errore di rete di Node). Qui si
+  // restituisce stringa VUOTA e chi chiama mette un generico tradotto: il
+  // `message` originale NON va all'utente. Non è pudore, è che quel testo lo
+  // scrive Node e nomina l'infrastruttura — «connect ECONNREFUSED 10.0.0.5:443»,
+  // path assoluti, nomi di host interni — e finisce in una risposta HTTP
+  // pubblica. Chi legge non può farne nulla, chi sonda il server sì. Il testo
+  // completo resta nei log del server, dove serve a noi.
+  return '';
+}
+
 // Factory: t(key, params) legata a una lingua — comoda dentro gli analyzer.
 export function makeT(lang) {
   return (key, params) => msg(lang, key, params);

@@ -4,6 +4,8 @@
 // ponytail: stato rate-limit IN-MEMORY → ok per un'istanza singola; su serverless
 // ponytail: multi-istanza serve un KV condiviso (Vercel KV / Upstash). Vedi README.
 
+import { msg, normalizeLang } from './messages/index.js';
+
 const HITS = new Map(); // ip -> number[] (timestamp in ms)
 
 // Sliding window per IP. `now` iniettabile per i test (niente dipendenza dall'orologio).
@@ -39,18 +41,21 @@ export async function verifyTurnstile(token, secret) {
 // Helper unico per gli endpoint: ritorna una Response di blocco, oppure null se via libera.
 // Entrambe le protezioni sono gate-ate dalle env → senza config, ritorna sempre null.
 export async function guard(req, body) {
+  // Anche un blocco è un messaggio all'utente: va nella sua lingua. `lang` sta
+  // nel body (tutte le route lo mandano); la whitelist di msg() fa il resto.
+  const l = normalizeLang(body && body.lang);
   const ip = (req.headers.get('x-forwarded-for') || '').split(',')[0].trim()
     || req.headers.get('x-real-ip') || 'local';
 
   if (process.env.RATE_LIMIT_ON) {
     const rl = rateLimit(ip, { limit: Number(process.env.RATE_LIMIT) || 20 });
     if (!rl.ok) {
-      return Response.json({ error: 'Troppe richieste, riprova tra poco.' },
+      return Response.json({ error: msg(l, 'api.rateLimit') },
         { status: 429, headers: { 'Retry-After': String(rl.retryAfter) } });
     }
   }
   const tv = await verifyTurnstile(body && body.turnstileToken, process.env.TURNSTILE_SECRET);
-  if (!tv.ok) return Response.json({ error: 'Verifica anti-bot non superata.' }, { status: 403 });
+  if (!tv.ok) return Response.json({ error: msg(l, 'api.botCheck') }, { status: 403 });
 
   return null; // via libera
 }

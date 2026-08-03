@@ -2,7 +2,7 @@
 // Riusa auditA11y() dal motore: nessuna logica duplicata qui.
 import { auditA11y } from 'beacon-geo/a11y';
 import { guard } from 'beacon-geo/guard';
-import { normalizeLang } from 'beacon-geo/messages';
+import { reqLang, fail, failFromError } from '../http.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;      // la scansione axe con rendering può durare qualche secondo
@@ -10,18 +10,17 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req) {
   let body;
-  try { body = await req.json(); } catch { return Response.json({ error: 'JSON non valido' }, { status: 400 }); }
-  const { url, deep, lang } = body || {};
-  if (!url || typeof url !== 'string') return Response.json({ error: 'Indirizzo del sito mancante' }, { status: 400 });
+  try { body = await req.json(); } catch { return fail(reqLang(req), 'api.badJson', 400); }
+  const { url, deep } = body || {};
+  const l = reqLang(req, body);
+  if (!url || typeof url !== 'string') return fail(l, 'url.missing', 400);
   const blocked = await guard(req, body); if (blocked) return blocked;
   try {
     // lang: whitelist it/en/de/fr/es/pt (qualunque altro valore → 'it')
-    const r = await auditA11y(url, { deep: !!deep, lang: normalizeLang(lang) });
+    const r = await auditA11y(url, { deep: !!deep, lang: l });
     return Response.json(r);
   } catch (e) {
-    // Indirizzo scritto male = colpa dell'input: 400 con il messaggio di normUrl,
-    // non un 500 con «TypeError: Invalid URL» addosso all'utente.
-    if (e && e.badUrl) return Response.json({ error: String(e.message) }, { status: 400 });
-    return Response.json({ error: 'Analisi fallita: ' + String(e).slice(0, 120) }, { status: 500 });
+    // Input sbagliato = 400 col motivo tradotto; imprevisto = 500 generico + log.
+    return failFromError(l, e, 'api/a11y');
   }
 }
