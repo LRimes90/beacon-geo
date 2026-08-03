@@ -269,6 +269,8 @@ export const it = {
   'aiact.reason.euUnsureWithSignals': 'Non ne eri certo e la pagina mostra segnali UE ({detail}): trattato come dentro, per prudenza',
   'aiact.reason.euUnsure': 'Non ne eri certo: è il caso più frequente per un’attività svizzera che lavora anche con clienti UE',
   'aiact.reason.partialCoverage': 'Questionario compilato in parte ({detail} domande): le domande senza risposta valgono come "no", quindi gli obblighi elencati sono un minimo, non l’elenco completo',
+  'aiact.scan.rejected': 'Indirizzo non analizzabile: {detail}',
+  'aiact.scan.unreachable': 'Il sito non ha risposto: nessun segnale è stato controllato. Riprova, oppure compila il questionario — funziona anche senza scansione.',
 
   // Obblighi
   'aiact.ob.art5': 'Pratiche vietate: cessare l’uso e documentare la valutazione',
