@@ -80,6 +80,20 @@ export default function AiAct() {
               <fieldset key={id} className="qbox">
                 <legend>{t(q.q)}</legend>
                 {q.help && <p className="qhelp">{t(q.help)}</p>}
+                {/* <details> nativo: si apre da tastiera, lo screen reader lo annuncia
+                    come gruppo espandibile e non costa una riga di JS. Chiuso per
+                    default — chi ha già capito la domanda non deve scorrere il resto. */}
+                {(q.detail || q.examples?.length > 0) && (
+                  <details className="qmore">
+                    <summary>{t('Cosa significa · esempi')}</summary>
+                    {q.detail && <p className="qdetail">{t(q.detail)}</p>}
+                    {q.examples?.length > 0 && (
+                      <ul className="qex">
+                        {q.examples.map((ex, i) => <li key={i}>{t(ex)}</li>)}
+                      </ul>
+                    )}
+                  </details>
+                )}
                 <div className="qopts">
                   {q.kind === 'bool' && ['yes', 'no'].map((v) => (
                     <button key={v} type="button"

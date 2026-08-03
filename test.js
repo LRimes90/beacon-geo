@@ -19,6 +19,7 @@ import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
 import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
 import { deriveObligations, decideVerdict, assessAiAct, euEvidence, OBLIGATIONS, QUESTIONS } from './src/aiactAssess.js';
 import { QUESTION_TEXT, REQUIRED } from './web/app/aiact/questions.mjs';
+import { en } from './web/app/translations/en.js';
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
@@ -565,6 +566,20 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(REQUIRED.every((id) => QUESTION_TEXT[id]), 'aiact/ui: le domande obbligatorie esistono');
   ok(Object.values(QUESTION_TEXT).every((q) => !q.showIf || QUESTION_TEXT[q.showIf]),
     'aiact/ui: ogni showIf punta a una domanda esistente');
+  // Ogni domanda deve avere la spiegazione estesa e almeno due esempi: chi legge
+  // "sei fornitore o deployer?" senza esempi tira a indovinare, e una risposta
+  // indovinata produce un verdetto sbagliato con l'aria di essere autorevole.
+  for (const [id, q] of Object.entries(QUESTION_TEXT)) {
+    ok(typeof q.detail === 'string' && q.detail.length > 80, `aiact/ui: spiegazione estesa su ${id}`);
+    ok(Array.isArray(q.examples) && q.examples.length >= 2, `aiact/ui: almeno due esempi su ${id}`);
+    ok(q.examples.every((e) => typeof e === 'string' && e.trim().length > 0), `aiact/ui: nessun esempio vuoto su ${id}`);
+  }
+  // La chiave i18n È la stringa italiana: una stringa senza voce in `en` resta
+  // in italiano sul sito inglese, e nessun errore lo segnala a runtime.
+  const missingEn = Object.values(QUESTION_TEXT)
+    .flatMap((q) => [q.q, q.help, q.detail, ...(q.examples || []), ...Object.values(q.options || {})])
+    .filter((s) => s && !en[s]);
+  ok(missingEn.length === 0, `aiact/ui: traduzione en per ogni stringa del questionario (mancanti: ${missingEn.slice(0, 3).join(' | ')})`);
   // Il verdetto deve essere calcolabile con le sole risposte obbligatorie.
   const minimal = assessAiAct(Object.fromEntries(REQUIRED.map((id) => [id, id === 'role' ? 'deployer' : 'yes'])), null, 'it');
   ok(minimal.verdict.title && minimal.obligations.length > 0, 'aiact/ui: le risposte obbligatorie bastano per un verdetto');
