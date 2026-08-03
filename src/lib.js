@@ -53,10 +53,13 @@ export function getTitle(html) {
   return m ? m[1].replace(/\s+/g, ' ').trim() : null;
 }
 export function getMeta(html, name) {
-  const a = html.match(new RegExp('<meta[^>]+(?:name|property)=["\\\']' + name + '["\\\'][^>]*?content=["\\\']([^"\\\']*)["\\\']', 'i'));
-  if (a) return a[1];
-  const b = html.match(new RegExp('<meta[^>]+content=["\\\']([^"\\\']*)["\\\'][^>]*?(?:name|property)=["\\\']' + name + '["\\\']', 'i'));
-  return b ? b[1] : null;
+  // Il delimitatore va catturato e richiuso con backreference: con [^"']* un apostrofo
+  // dentro content troncava il valore (in italiano dell'/l'/un' sono ovunque) → description
+  // "troppo corta" e structured penalizzato su tutti i siti italiani.
+  const a = html.match(new RegExp('<meta[^>]+(?:name|property)=["\\\']' + name + '["\\\'][^>]*?content=(["\\\'])([\\s\\S]*?)\\1', 'i'));
+  if (a) return a[2];
+  const b = html.match(new RegExp('<meta[^>]+content=(["\\\'])([\\s\\S]*?)\\1[^>]*?(?:name|property)=["\\\']' + name + '["\\\']', 'i'));
+  return b ? b[2] : null;
 }
 export function has(html, re) { return re.test(html); }
 export function count(html, re) { const m = html.match(re); return m ? m.length : 0; }
@@ -81,18 +84,40 @@ export function jsonLdTypes(html) {
 export function jsonLdCount(html) {
   return count(html, /<script[^>]+type=["\']application\/ld\+json["\']/gi);
 }
+// Commenti, <style>, <script>, <template> e <noscript> contengono stringhe che *sembrano*
+// tag ma non esistono nel DOM: un "<h1" dentro un commento CSS faceva contare 2 H1 su
+// canmedticino.ch (falso positivo "H1 duplicato"). Da ripulire prima di ogni conteggio.
+export function contentHtml(html) {
+  return String(html || '')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<template\b[\s\S]*?<\/template>/gi, ' ')
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ');
+}
+
+// Denominatore del rapporto semantico: solo il <body>. I tag di <head> (meta, link, title)
+// non possono per definizione essere semantici e diluivano il rapporto verso il basso.
+export function bodyHtml(html) {
+  const clean = contentHtml(html);
+  const m = clean.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
+  return m ? m[1] : clean;
+}
+
 export function semanticRatio(html) {
-  const semantic = count(html, /<(header|nav|main|article|section|aside|footer|figure|figcaption|time|mark)\b/gi);
-  const total = count(html, /<[a-z][a-z0-9]*\b/gi) || 1;
+  const body = bodyHtml(html);
+  const semantic = count(body, /<(header|nav|main|article|section|aside|footer|figure|figcaption|time|mark)\b/gi);
+  const total = count(body, /<[a-z][a-z0-9]*\b/gi) || 1;
   return { semantic, total, ratio: semantic / total };
 }
 export function headings(html) {
+  const clean = contentHtml(html);
   const h = {};
-  for (let i = 1; i <= 6; i++) h['h' + i] = count(html, new RegExp('<h' + i + '\\b', 'gi'));
+  for (let i = 1; i <= 6; i++) h['h' + i] = count(clean, new RegExp('<h' + i + '\\b', 'gi'));
   return h;
 }
 export function imgAlt(html) {
-  const imgs = html.match(/<img\b[^>]*>/gi) || [];
+  const imgs = contentHtml(html).match(/<img\b[^>]*>/gi) || [];
   const withAlt = imgs.filter((i) => /\balt\s*=\s*["'][^"']*["']/i.test(i)).length;
   return { total: imgs.length, withAlt };
 }
@@ -105,7 +130,7 @@ export function wordCount(html) {
   return (text.match(/[\p{L}\p{N}]{2,}/gu) || []).length;
 }
 export function links(html, host) {
-  const hrefs = [...html.matchAll(/<a\b[^>]*href=["\']([^"\']+)["\']/gi)].map((m) => m[1]);
+  const hrefs = [...contentHtml(html).matchAll(/<a\b[^>]*href=["\']([^"\']+)["\']/gi)].map((m) => m[1]);
   let internal = 0, external = 0;
   for (const h of hrefs) {
     if (h.startsWith('#') || h.startsWith('mailto:') || h.startsWith('tel:') || h.startsWith('javascript:')) continue;

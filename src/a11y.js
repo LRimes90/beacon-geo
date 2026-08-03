@@ -6,33 +6,65 @@
 // EAA (Dir. UE 2019/882) → EN 301 549 → WCAG 2.1 AA: qui i check "a colpo sicuro".
 // i18n: analyzeA11y/summarizeAxe/auditA11y accettano `lang` (default 'it');
 // le stringhe vengono dal catalogo src/messages/ (fallback italiano).
-import { fetchText, getTitle, getMeta, imgAlt, headings } from './lib.js';
+import { fetchText, getTitle, getMeta, imgAlt, headings, contentHtml } from './lib.js';
 import { remedyFor } from './remediation.js';
 import { makeT } from './messages/index.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 const pct = (a, b) => (b ? (a / b) * 100 : 0);
 
+// Tag senza contenuto: non aprono un sottoalbero, quindi non hanno un intervallo.
+const VOID_TAGS = /^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/i;
+
+// Intervalli [start, end) del sottoalbero degli elementi che soddisfano `openRe`.
+// La chiusura si trova contando le aperture/chiusure dello stesso tag: basta per
+// markup ben formato (contenitori honeypot e <label>), che è il caso reale.
+function subtreeRanges(html, openRe) {
+  const out = [];
+  for (const m of html.matchAll(openRe)) {
+    const name = m[1];
+    if (VOID_TAGS.test(name)) continue;
+    const re = new RegExp('</?' + name + '\\b[^>]*>', 'gi');
+    re.lastIndex = m.index + m[0].length;
+    let depth = 1, tok = null, end = html.length;
+    while ((tok = re.exec(html))) {
+      depth += tok[0][1] === '/' ? -1 : 1;
+      if (depth === 0) { end = tok.index + tok[0].length; break; }
+    }
+    out.push({ start: m.index, end, inner: html.slice(m.index + m[0].length, end) });
+  }
+  return out;
+}
+const inRange = (i, ranges) => ranges.some((r) => i > r.start && i < r.end);
+
 // Conta i controlli di form e quanti hanno un'etichetta accessibile.
 // "labeled" = ha aria-label/aria-labelledby, un <label for=id> che lo referenzia,
-// oppure un title. Esclusi i controlli che non richiedono label (hidden/submit/
-// button/image/reset). Analisi statica su HTML servito (come il resto del modulo):
-// la label IMPLICITA (input dentro <label>) può sfuggire → axe in deep la copre.
+// un title, oppure sta dentro un <label> con testo (label IMPLICITA — il pattern
+// standard di checkbox consenso: <label><input><span>testo</span></label>).
+// Esclusi: i controlli che non richiedono label (hidden/submit/button/image/reset)
+// e quelli in un sottoalbero aria-hidden="true" (honeypot antispam: non sono nella
+// accessibility tree, chiedere una label sarebbe un falso positivo).
 export function accessibleFormLabels(html) {
+  const clean = contentHtml(html);
   const labelFor = new Set(
-    [...html.matchAll(/<label\b[^>]*\bfor\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1])
+    [...clean.matchAll(/<label\b[^>]*\bfor\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1])
   );
-  const controls = html.match(/<(input|select|textarea)\b[^>]*>/gi) || [];
+  const hiddenRanges = subtreeRanges(clean, /<([a-z][a-z0-9]*)\b[^>]*\baria-hidden\s*=\s*["']true["'][^>]*>/gi);
+  // Solo le label con testo proprio: un <label> vuoto non etichetta nulla.
+  const labelRanges = subtreeRanges(clean, /<(label)\b[^>]*>/gi)
+    .filter((r) => /[\p{L}\p{N}]/u.test(r.inner.replace(/<[^>]+>/g, ' ')));
   const skip = /\btype\s*=\s*["'](hidden|submit|button|image|reset)["']/i;
   let total = 0, labeled = 0;
-  for (const tag of controls) {
+  for (const m of clean.matchAll(/<(input|select|textarea)\b[^>]*>/gi)) {
+    const tag = m[0];
     if (/^<input/i.test(tag) && skip.test(tag)) continue; // non richiede label
+    if (inRange(m.index, hiddenRanges)) continue;         // fuori dalla accessibility tree
     total++;
     const id = (tag.match(/\bid\s*=\s*["']([^"']+)["']/i) || [])[1];
     const hasAria = /\baria-label\s*=\s*["'][^"']+["']/i.test(tag) ||
                     /\baria-labelledby\s*=\s*["'][^"']+["']/i.test(tag);
     const hasTitle = /\btitle\s*=\s*["'][^"']+["']/i.test(tag);
-    if (hasAria || (id && labelFor.has(id)) || hasTitle) labeled++;
+    if (hasAria || (id && labelFor.has(id)) || hasTitle || inRange(m.index, labelRanges)) labeled++;
   }
   return { total, labeled };
 }

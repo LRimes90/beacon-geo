@@ -85,8 +85,14 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   // 7) punteggio complessivo pesato
   const weights = WEIGHTS; // importato come modulo JS: sopravvive al bundling (no ENOENT)
   let total = 0, wsum = 0;
-  for (const k of Object.keys(CATEGORY_LABELS)) { total += results[k].score * weights[k]; wsum += weights[k]; }
-  const overall = Math.round(total / wsum);
+  // Un modulo marcato `unmeasured` esce dalla media: un servizio esterno giù non
+  // deve abbassare il voto di un sito che non è cambiato. Vedi analyzeOffsite().
+  for (const k of Object.keys(CATEGORY_LABELS)) {
+    if (results[k].unmeasured) continue;
+    total += results[k].score * weights[k];
+    wsum += weights[k];
+  }
+  const overall = wsum ? Math.round(total / wsum) : 0;
 
   // fondamentali tecnici (informativo, con allarmi forti)
   const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html) || /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots/i.test(html);
@@ -149,8 +155,12 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
   };
 
   let total = 0, wsum = 0;
-  for (const k of Object.keys(CATEGORY_LABELS)) { total += results[k].score * WEIGHTS[k]; wsum += WEIGHTS[k]; }
-  const overall = Math.round(total / wsum);
+  for (const k of Object.keys(CATEGORY_LABELS)) {
+    if (results[k].unmeasured) continue; // vedi analyzeOffsite(): servizio esterno giù ≠ difetto del sito
+    total += results[k].score * WEIGHTS[k];
+    wsum += WEIGHTS[k];
+  }
+  const overall = wsum ? Math.round(total / wsum) : 0;
 
   const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html) || /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots/i.test(html);
   const tech = analyzeTech({
@@ -181,16 +191,47 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
   };
 }
 
-async function commonCrawl(host) {
+// Common Crawl pubblica un indice nuovo ogni ~2 mesi: un id fisso invecchia e i siti
+// nati dopo risultano "non indicizzati" per sempre (canmedticino.ch veniva dato assente
+// pur essendo in CC-MAIN-2026-30). Risolviamo l'indice più recente da collinfo.json.
+const CC_FALLBACK_INDEX = 'CC-MAIN-2026-30';
+let ccIndexCache = null;
+async function latestCcIndex() {
+  if (ccIndexCache) return ccIndexCache;
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch(`https://index.commoncrawl.org/CC-MAIN-2024-51-index?url=${encodeURIComponent(host)}%2F*&output=json&limit=1`, { signal: ctrl.signal });
+    const res = await fetch('https://index.commoncrawl.org/collinfo.json', { signal: ctrl.signal });
     clearTimeout(t);
-    if (!res.ok) return null;
-    const txt = await res.text();
-    return txt.trim().length > 0;
-  } catch { return null; }
+    if (!res.ok) return CC_FALLBACK_INDEX;
+    const list = await res.json();
+    // collinfo.json è ordinato dal più recente; "id" è già nella forma CC-MAIN-YYYY-WW.
+    ccIndexCache = (Array.isArray(list) && list[0] && list[0].id) || CC_FALLBACK_INDEX;
+    return ccIndexCache;
+  } catch { return CC_FALLBACK_INDEX; }
+}
+
+async function commonCrawl(host) {
+  // Il CDX di Common Crawl è lento a freddo: misurati 9s alla prima query e 1,8s
+  // sulle successive. Con il timeout a 6s ogni run "pulita" ricadeva su null e il
+  // punteggio offsite restava bloccato a 60 anche per host effettivamente indicizzati.
+  // 15s + un secondo tentativo: se scade anche quello, l'indice è davvero giù.
+  const index = await latestCcIndex();
+  const url = `https://index.commoncrawl.org/${index}-index?url=${encodeURIComponent(host)}%2F*&output=json&limit=1`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 15000);
+      const res = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(t);
+      // 404 = nessuna cattura per quell'host: risposta valida, non indisponibilità.
+      if (res.status === 404) return false;
+      if (!res.ok) continue;
+      const txt = await res.text();
+      return txt.trim().length > 0;
+    } catch { /* timeout o errore rete: riprova una volta */ }
+  }
+  return null;
 }
 
 // ---------- output CLI ----------
