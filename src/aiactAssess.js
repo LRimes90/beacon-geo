@@ -34,15 +34,44 @@ export const QUESTIONS = [
   { id: 'deepfake', kind: 'bool' },         // persone/luoghi/eventi reali, verosimili
   { id: 'gpai', kind: 'bool' },             // sviluppi/immetti un modello di uso generale
   { id: 'staffUsingAi', kind: 'bool' },     // persone che usano IA in nome tuo
+  // 'none' è un'opzione esplicita, non l'assenza di scelta: su una domanda a scelta
+  // multipla un elenco vuoto non distingue "nessuno di questi" da "non ho risposto".
+  // Serve per la copertura (vedi `coverage`), e deriveObligations la filtra già.
   {
     id: 'highRiskUse', kind: 'multi',
-    options: ['hr', 'credit', 'education', 'essentialServices', 'biometrics', 'criticalInfra', 'justice'],
+    options: ['none', 'hr', 'credit', 'education', 'essentialServices', 'biometrics', 'criticalInfra', 'justice'],
   },
   {
     id: 'prohibitedUse', kind: 'multi',
-    options: ['emotionWorkplace', 'socialScoring', 'faceScraping', 'subliminal', 'predictivePolicing'],
+    options: ['none', 'emotionWorkplace', 'socialScoring', 'faceScraping', 'subliminal', 'predictivePolicing'],
   },
 ];
+
+// Dipendenze logiche: la domanda esiste solo se un'altra risposta è vera. Vive qui
+// e non nel JSX perché è una regola del questionario, non una scelta di resa: la UI
+// la legge da `QUESTIONS` tramite questions.mjs e `coverage` la usa per non contare
+// come "non risposta" una domanda che non è mai stata mostrata.
+// Un deep fake È contenuto sintetico: chiederlo a chi ha negato i contenuti generati
+// non è una domanda in più, è una domanda senza senso — e senza questa dipendenza
+// la copertura resterebbe parziale per sempre a chi ha risposto correttamente "no".
+export const SHOW_IF = { editorialReview: 'syntheticContent', deepfake: 'syntheticContent' };
+
+// ── Copertura delle risposte ────────────────────────────────────────────────
+// Il motore tratta una domanda senza risposta come un "no": è la scelta prudente
+// (non inventa obblighi che nessuno ha dichiarato), ma senza dirlo il referto
+// sembrerebbe completo. Qui misuriamo quanto del questionario è stato davvero
+// compilato, così il verdetto può abbassare la confidenza e la UI può avvisare.
+export function coverage(answers = {}) {
+  const applicable = QUESTIONS.filter((q) => !SHOW_IF[q.id] || answers[SHOW_IF[q.id]] === true);
+  const given = (q) => {
+    const v = answers[q.id];
+    if (q.kind === 'bool') return typeof v === 'boolean';     // `false` è una risposta
+    if (q.kind === 'multi') return Array.isArray(v) && v.length > 0; // 'none' incluso
+    return typeof v === 'string' && q.options.includes(v);
+  };
+  const missing = applicable.filter((q) => !given(q)).map((q) => q.id);
+  return { applicable: applicable.length, answered: applicable.length - missing.length, missing };
+}
 
 // ── Catalogo obblighi ───────────────────────────────────────────────────────
 // `severity`: 'blocking' = da fermare subito · 'due' = obbligo attivo · 'future' = scadenza futura.
@@ -59,6 +88,14 @@ export const OBLIGATIONS = {
   nldp: { ref: 'nLPD art. 19-21 · GDPR art. 13-14, 22', from: 'in vigore', severity: 'due' },
 };
 
+// Le risposte arrivano da un body JSON: chiunque può mandare una stringa dove il
+// questionario prevede un elenco. Prima `(a.highRiskUse || []).filter(...)` lanciava
+// un TypeError che la route trasformava in 500; qui un valore del tipo sbagliato vale
+// come nessuna selezione — la copertura lo segnala già come domanda non risposta.
+function asList(v) {
+  return Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x !== 'none') : [];
+}
+
 // Ricava gli obblighi dalle risposte + dai segnali dello scan (funzione PURA).
 // I segnali dello scan possono ATTIVARE un obbligo che l'utente non ha dichiarato:
 // se troviamo un chatbot in pagina, l'art. 50 §1 entra in lista anche se ha risposto "no".
@@ -69,8 +106,8 @@ export function deriveObligations(answers = {}, signals = null) {
   const hasEmotionOnPage = !!(s.emotion && s.emotion.length);
   const usesAi = a.role === 'deployer' || a.role === 'provider' || a.role === 'both';
   const isProvider = a.role === 'provider' || a.role === 'both';
-  const prohibited = (a.prohibitedUse || []).filter((x) => x !== 'none');
-  const highRisk = (a.highRiskUse || []).filter((x) => x !== 'none');
+  const prohibited = asList(a.prohibitedUse);
+  const highRisk = asList(a.highRiskUse);
 
   const out = [];
   const add = (id, why) => out.push({ id, ...OBLIGATIONS[id], why });
@@ -135,7 +172,7 @@ export function decideVerdict(answers = {}, signals = null, obligations = []) {
   const aiOnPage = !!(s && ((s.chatbots && s.chatbots.length) || (s.emotion && s.emotion.length)));
   const declaresAi = a.role === 'deployer' || a.role === 'provider' || a.role === 'both';
   const blocking = obligations.some((o) => o.severity === 'blocking');
-  const declaredProhibited = (a.prohibitedUse || []).filter((x) => x !== 'none').length > 0;
+  const declaredProhibited = asList(a.prohibitedUse).length > 0;
 
   // ── Asse materiale ──
   let material, materialConf;
@@ -233,6 +270,17 @@ export function assessAiAct(answers = {}, signals = null, lang = 'it', today = n
   const raw = deriveObligations(answers, signals);
   const verdict = decideVerdict(answers, signals, raw);
 
+  // Copertura parziale = la lista degli obblighi è incompleta per costruzione, non
+  // perché non ce ne siano. La confidenza scende a 'media' e il motivo è scritto nel
+  // referto. Unica eccezione: un divieto dichiarato è certo comunque — se hai detto
+  // che leggi le emozioni sul lavoro, le domande salte non rendono il fatto dubbio.
+  const cov = coverage(answers);
+  if (cov.missing.length > 0) {
+    if (!verdict.blocking) verdict.confidence = minConf(verdict.confidence, 'medium');
+    verdict.reasons = [...verdict.reasons,
+      { key: 'partialCoverage', detail: cov.answered + '/' + cov.applicable }];
+  }
+
   // Fuori dall'ambito gli obblighi dell'AI Act non sono esigibili: restano in
   // elenco ma come 'conditional' ("si applicherebbero con un nesso UE"), perché
   // quel 'out' poggia sulla parola dell'utente e non su una prova. Due eccezioni
@@ -251,7 +299,10 @@ export function assessAiAct(answers = {}, signals = null, lang = 'it', today = n
       return {
         ...o,
         inForce,
-        severity: outOfScope && matured === 'due' && o.id !== 'nldp' ? 'conditional' : matured,
+        // Fuori ambito anche le scadenze future diventano condizionali: lasciare
+        // 'future' significa dire «ti riguarderà dal 2027» a chi abbiamo appena
+        // detto che non è nell'ambito. La data resta in `from`, la UI la mostra.
+        severity: outOfScope && (matured === 'due' || matured === 'future') && o.id !== 'nldp' ? 'conditional' : matured,
         label: t('aiact.ob.' + o.id),
       };
     })
@@ -265,6 +316,7 @@ export function assessAiAct(answers = {}, signals = null, lang = 'it', today = n
       reasons: verdict.reasons.map((r) => t('aiact.reason.' + r.key, { detail: r.detail })),
     },
     obligations,
+    coverage: cov,
     // Ciò che è già in vigore, separato da ciò che scade nel 2027-28.
     due: obligations.filter((o) => o.severity === 'blocking' || o.severity === 'due').map((o) => o.id),
     dates: DATES,

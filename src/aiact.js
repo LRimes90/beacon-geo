@@ -12,7 +12,7 @@
 // Riferimenti: Reg. (UE) 2024/1689 art. 2 (ambito), 4 (alfabetizzazione), 5 (pratiche
 // vietate), 50 (trasparenza), 99 (sanzioni). Applicabilità: art. 113 + Digital Omnibus.
 
-import { fetchText, has } from './lib.js';
+import { fetchText, has, normUrl } from './lib.js';
 import { makeT } from './messages/index.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
@@ -231,9 +231,7 @@ export const AIACT_LABEL = 'Trasparenza AI Act';
 
 // ── Orchestratore con rete (stesso contratto di auditA11y) ──────────────────
 export async function auditAiAct(rawUrl, { lang = 'it' } = {}) {
-  let u = String(rawUrl).trim();
-  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  const url = new URL(u).href;
+  const url = normUrl(rawUrl);
   const page = await fetchText(url);
   const html = page.body || '';
   const signals = html ? detectAiSignals(html, { url }) : null;

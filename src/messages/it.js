@@ -268,6 +268,7 @@ export const it = {
   'aiact.reason.euExcluded': 'Nessun segnale di offerta al mercato UE',
   'aiact.reason.euUnsureWithSignals': 'Non ne eri certo e la pagina mostra segnali UE ({detail}): trattato come dentro, per prudenza',
   'aiact.reason.euUnsure': 'Non ne eri certo: è il caso più frequente per un’attività svizzera che lavora anche con clienti UE',
+  'aiact.reason.partialCoverage': 'Questionario compilato in parte ({detail} domande): le domande senza risposta valgono come "no", quindi gli obblighi elencati sono un minimo, non l’elenco completo',
 
   // Obblighi
   'aiact.ob.art5': 'Pratiche vietate: cessare l’uso e documentare la valutazione',

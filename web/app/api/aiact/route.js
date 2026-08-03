@@ -33,6 +33,9 @@ export async function POST(req) {
     const assessment = answers ? assessAiAct(answers, signals, l) : null;
     return Response.json({ scan, assessment });
   } catch (e) {
+    // Indirizzo scritto male = colpa dell'input: 400 con il messaggio di normUrl,
+    // non un 500 con «TypeError: Invalid URL» addosso all'utente.
+    if (e && e.badUrl) return Response.json({ error: String(e.message) }, { status: 400 });
     return Response.json({ error: 'Analisi fallita: ' + String(e).slice(0, 120) }, { status: 500 });
   }
 }

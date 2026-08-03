@@ -37,6 +37,8 @@ export default function A11y() {
   async function downloadStatement() {
     if (!res) return;
     const r = await fetch('/api/statement', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ audit: res }) });
+    // Come per llms.txt: su errore il JSON finiva dentro il .md scaricato.
+    if (!r.ok) { const j = await r.json().catch(() => ({})); setErr(j.error || t('Generazione fallita')); return; }
     const txt = await r.text();
     const blob = new Blob([txt], { type: 'text/markdown;charset=utf-8' });
     const link = document.createElement('a');

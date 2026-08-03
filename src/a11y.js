@@ -6,7 +6,7 @@
 // EAA (Dir. UE 2019/882) → EN 301 549 → WCAG 2.1 AA: qui i check "a colpo sicuro".
 // i18n: analyzeA11y/summarizeAxe/auditA11y accettano `lang` (default 'it');
 // le stringhe vengono dal catalogo src/messages/ (fallback italiano).
-import { fetchText, getTitle, getMeta, imgAlt, headings, contentHtml } from './lib.js';
+import { fetchText, getTitle, getMeta, imgAlt, headings, contentHtml, normUrl } from './lib.js';
 import { remedyFor } from './remediation.js';
 import { makeT } from './messages/index.js';
 
@@ -156,9 +156,7 @@ export function summarizeAxe(results, lang = 'it') {
 // Orchestratore sottile (I/O): scarica l'HTML servito e lancia l'analyzer statico.
 // Con { deep:true } esegue anche axe-core nel DOM renderizzato (contrasto reale + ARIA).
 export async function auditA11y(rawUrl, { deep = false, lang = 'it' } = {}) {
-  let u = String(rawUrl).trim();
-  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  const url = new URL(u).href;
+  const url = normUrl(rawUrl);
   const page = await fetchText(url);
   const html = page.body || '';
   const result = html ? analyzeA11y(html, lang) : null;

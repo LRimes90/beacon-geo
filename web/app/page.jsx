@@ -72,6 +72,9 @@ export default function Home() {
   async function downloadLlms() {
     if (!res) return;
     const r = await fetch('/api/llms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: res.url }) });
+    // Senza questo controllo il corpo dell'errore (JSON) finiva scaricato dentro
+    // llms.txt: l'utente apriva il file e ci trovava {"error":"..."}.
+    if (!r.ok) { const j = await r.json().catch(() => ({})); setErr(j.error || t('Generazione fallita')); return; }
     const txt = await r.text();
     const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
     const a = document.createElement('a');

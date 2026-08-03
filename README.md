@@ -31,7 +31,7 @@ node crawl.js stripe.com [--max 8]  # punteggio di SITO (multi-pagina)
 node batch.js [urls...]             # analisi parallela multi-sito
 node compare.js tuosito.com c1.com c2.com  # confronto competitor (GEO+a11y+perf, primo = riferimento) → beacon-compare.html
 node aiact.js tuosito.ch [--json] [--lang=en]  # segnali di trasparenza AI Act in pagina
-node test.js                        # 261 assert sulle funzioni pure
+node test.js                        # 327 assert sulle funzioni pure
 ```
 
 ## Come funziona l'accessibilità
@@ -86,11 +86,15 @@ src/llmstxt.js     generatore llms.txt
 src/report.js      export GEO Markdown/HTML
 src/guard.js       rate-limit per-IP + verifica Turnstile (inerti senza env)
 weights.json       pesi categorie GEO
-test.js            261 assert (no framework) — girano anche in CI
+test.js            327 assert (no framework) — girano anche in CI
 ```
 
 ## Test & CI
-`node test.js` → 261 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
+`node test.js` → 327 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
+
+Due degli assert non sono casi scelti a mano: generano il **prodotto cartesiano** delle risposte del questionario AI Act (domande non risposte comprese) su due date e due esiti di scansione — ~525.000 combinazioni — e verificano invarianti che devono valere sempre: nessuna eccezione, nessuna chiave i18n non tradotta a schermo, un divieto dichiarato è sempre bloccante, fuori dall'ambito nessun obbligo dell'AI Act resta esigibile (`due` **né** `future`; la nLPD è l'eccezione dichiarata), `inForce` coerente con la data di riferimento, confidenza alta solo con copertura completa. È il check che ha trovato la scadenza `future` sopravvissuta al verdetto *fuori ambito*.
+
+Gli endpoint sono stati inoltre passati al fuzz (780 casi: tipi sbagliati, JSON malformato, indirizzi impossibili, payload enormi, SSRF su 10 bersagli interni) e la UI a uno smoke Playwright sulle 5 pagine in italiano e inglese. Esito: nessun 500, nessuna fuga di contenuto dagli indirizzi interni, errore leggibile su ogni input non valido.
 
 ## Deploy
 

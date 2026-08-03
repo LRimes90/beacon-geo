@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links } from './src/lib.js';
+import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
@@ -17,7 +17,7 @@ import { normalize, toMarkdown, toHtml } from './src/report.js';
 import { auditHtmlSnapshot } from './audit.js';
 import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
 import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
-import { deriveObligations, decideVerdict, assessAiAct, euEvidence, OBLIGATIONS, QUESTIONS } from './src/aiactAssess.js';
+import { deriveObligations, decideVerdict, assessAiAct, euEvidence, coverage, OBLIGATIONS, QUESTIONS, SHOW_IF } from './src/aiactAssess.js';
 import { QUESTION_TEXT, REQUIRED } from './web/app/aiact/questions.mjs';
 import { en } from './web/app/translations/en.js';
 
@@ -566,6 +566,13 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(REQUIRED.every((id) => QUESTION_TEXT[id]), 'aiact/ui: le domande obbligatorie esistono');
   ok(Object.values(QUESTION_TEXT).every((q) => !q.showIf || QUESTION_TEXT[q.showIf]),
     'aiact/ui: ogni showIf punta a una domanda esistente');
+  // Le dipendenze vivono in due posti: SHOW_IF (motore, usato da `coverage`) e
+  // `showIf` (UI, decide cosa mostrare). Se divergono, una domanda nascosta viene
+  // contata come "non risposta" — o viceversa una mostrata sparisce dal conteggio.
+  const uiShowIf = Object.fromEntries(
+    Object.entries(QUESTION_TEXT).filter(([, q]) => q.showIf).map(([id, q]) => [id, q.showIf]));
+  ok(JSON.stringify(uiShowIf) === JSON.stringify(SHOW_IF),
+    `aiact/ui: SHOW_IF del motore == showIf della UI (${JSON.stringify(uiShowIf)})`);
   // Ogni domanda deve avere la spiegazione estesa e almeno due esempi: chi legge
   // "sei fornitore o deployer?" senza esempi tira a indovinare, e una risposta
   // indovinata produce un verdetto sbagliato con l'aria di essere autorevole.
@@ -583,6 +590,51 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // Il verdetto deve essere calcolabile con le sole risposte obbligatorie.
   const minimal = assessAiAct(Object.fromEntries(REQUIRED.map((id) => [id, id === 'role' ? 'deployer' : 'yes'])), null, 'it');
   ok(minimal.verdict.title && minimal.obligations.length > 0, 'aiact/ui: le risposte obbligatorie bastano per un verdetto');
+}
+
+// ── AI Act: copertura delle risposte ─────────────────────────────────────────
+// Il motore legge una domanda senza risposta come un "no". È prudente, ma un
+// referto che tace la differenza tra "ho detto no" e "non ho risposto" promette
+// una completezza che non ha: `coverage` la misura e il verdetto la dichiara.
+{
+  const full = {
+    euMarket: 'yes', role: 'deployer', interaction: true, syntheticContent: true,
+    editorialReview: false, deepfake: false, gpai: false, staffUsingAi: true,
+    highRiskUse: ['none'], prohibitedUse: ['none'],
+  };
+  const c = coverage(full);
+  ok(c.missing.length === 0 && c.answered === c.applicable && c.applicable === QUESTIONS.length,
+    `aiact/coverage: questionario completo = 0 mancanti (${JSON.stringify(c)})`);
+
+  // `false` è una risposta, non un vuoto: senza questo un questionario tutto "no"
+  // risulterebbe non compilato e la confidenza scenderebbe senza motivo.
+  const allNo = { ...full, interaction: false, syntheticContent: false, staffUsingAi: false };
+  const cNo = coverage(allNo);
+  ok(cNo.missing.length === 0, `aiact/coverage: i "no" contano come risposte (${JSON.stringify(cNo.missing)})`);
+  // ...e le due domande dipendenti da syntheticContent escono dal denominatore.
+  ok(cNo.applicable === QUESTIONS.length - 2,
+    `aiact/coverage: le domande nascoste non entrano nel conteggio (${cNo.applicable})`);
+
+  // Elenco vuoto su una multipla = domanda saltata; ['none'] = "nessuna di queste".
+  ok(coverage({ ...full, highRiskUse: [] }).missing.join() === 'highRiskUse',
+    'aiact/coverage: multipla vuota = non risposta');
+  ok(coverage({ ...full, highRiskUse: ['none'] }).missing.length === 0,
+    'aiact/coverage: «nessuna di queste» = risposta');
+  // Un valore fuori elenco (querystring manipolata, vecchio link) non è una risposta.
+  ok(coverage({ ...full, role: 'boss' }).missing.join() === 'role',
+    'aiact/coverage: valore non previsto = non risposta');
+
+  // Copertura parziale: confidenza al massimo 'media' e motivo scritto nel referto.
+  const part = assessAiAct({ euMarket: 'yes', role: 'provider' }, null, 'it');
+  ok(part.verdict.confidence === 'medium', `aiact/coverage: confidenza declassata (${part.verdict.confidence})`);
+  ok(part.verdict.reasons.some((r) => /in parte/.test(r)), 'aiact/coverage: il referto dichiara la copertura parziale');
+  ok(part.coverage.answered === 2 && part.coverage.missing.length > 0, 'aiact/coverage: il conteggio arriva alla UI');
+  ok(assessAiAct(full, null, 'it').verdict.confidence === 'high',
+    'aiact/coverage: questionario completo = confidenza alta');
+  // Un divieto dichiarato è certo comunque: le domande saltate non lo rendono dubbio.
+  const banned = assessAiAct({ euMarket: 'yes', role: 'deployer', prohibitedUse: ['emotionWorkplace'] }, null, 'it');
+  ok(banned.verdict.confidence === 'high' && banned.verdict.blocking,
+    `aiact/coverage: un divieto resta certo con copertura parziale (${banned.verdict.confidence})`);
 }
 
 // ── AI Act: contraddizione e obblighi fuori ambito ──────────────────────────
@@ -644,6 +696,138 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // il tempo, non il perimetro — e le due cose non devono annullarsi a vicenda.
   const outLater = assessAiAct({ euMarket: 'no', role: 'provider', highRiskUse: ['credit'] }, null, 'it', '2027-12-02');
   ok(find(outLater, 'highRiskProvider').severity === 'conditional', 'aiact/date: fuori ambito il maturato è condizionale');
+}
+
+// ── Robustezza sugli input malformati (trovati con un fuzz delle route) ──────
+// Le route accettano un body JSON: chiunque può mandare un numero dove serve una
+// stringa. Prima questi casi uscivano come 500 «TypeError: ...» — un errore del
+// server per un errore dell'utente. Qui si verifica il livello sotto: le funzioni
+// pure devono distinguere «input sbagliato» (dichiarato) da «guasto» (eccezione).
+{
+  // normUrl accetta l'indirizzo digitato senza schema, come fa la UI.
+  ok(normUrl('esempio.ch') === 'https://esempio.ch/', 'normUrl: aggiunge lo schema mancante');
+  ok(normUrl('  http://esempio.ch/x  ') === 'http://esempio.ch/x', 'normUrl: tollera gli spazi ai lati');
+  ok(normUrl('HTTP://Esempio.CH/') === 'http://esempio.ch/', 'normUrl: normalizza schema e host');
+  // ...e rifiuta il resto con un errore marcato, che le route traducono in 400.
+  const rejects = ['', '   ', 'not a url', 'javascript:alert(1)', 'data:text/html,x', ' ', null, undefined, 42, {}, []];
+  for (const bad of rejects) {
+    let e = null;
+    try { normUrl(bad); } catch (err) { e = err; }
+    ok(e && e.badUrl === true, `normUrl: rifiuta ${JSON.stringify(bad)} con badUrl`);
+    ok(e && typeof e.message === 'string' && !/TypeError|Invalid URL/.test(e.message),
+      `normUrl: messaggio leggibile per ${JSON.stringify(bad)}`);
+  }
+  // Un host con la porta NON è uno schema: il riconoscimento dello schema deve
+  // vedere il punto in `esempio.ch:8080` e lasciar passare l'indirizzo.
+  ok(normUrl('esempio.ch:8080/x') === 'https://esempio.ch:8080/x', 'normUrl: host con porta senza schema');
+  ok(normUrl('http://esempio.ch:8080') === 'http://esempio.ch:8080/', 'normUrl: host con porta e schema');
+  for (const s of ['ftp://esempio.ch/', 'file:///etc/passwd', 'gopher://esempio.ch/']) {
+    let msg = '';
+    try { normUrl(s); } catch (e) { msg = e.message; }
+    ok(/solo indirizzi http e https/.test(msg), `normUrl: messaggio sullo schema per ${s} (${msg})`);
+  }
+
+  // `javascript:` e `data:` non devono passare nemmeno per un'altra strada: se il
+  // fetch partisse, il guard SSRF li fermerebbe, ma non devono arrivare fin lì.
+  for (const scheme of ['javascript:alert(1)', 'data:text/html,<h1>x</h1>', 'file:///etc/passwd', 'ftp://esempio.ch/']) {
+    let ok4 = false;
+    try { const u = normUrl(scheme); ok4 = u.startsWith('http://') || u.startsWith('https://'); } catch { ok4 = true; }
+    ok(ok4, `normUrl: nessuno schema esotico sopravvive (${scheme})`);
+  }
+
+  // Un elenco a scelta multipla con il tipo sbagliato vale come nessuna selezione:
+  // il questionario non inventa obblighi e non lancia.
+  for (const junk of ['hr', 42, true, {}, null, [42], [{}]]) {
+    const a = { euMarket: 'yes', role: 'provider', highRiskUse: junk, prohibitedUse: junk };
+    let r = null;
+    try { r = assessAiAct(a, null, 'it'); } catch { r = null; }
+    ok(r && r.verdict && Array.isArray(r.obligations),
+      `aiact/robustezza: multi = ${JSON.stringify(junk)} non lancia`);
+    ok(r && !r.obligations.some((o) => o.id === 'highRiskProvider' || o.id === 'prohibited'),
+      `aiact/robustezza: multi = ${JSON.stringify(junk)} non attiva alto rischio né divieti`);
+  }
+  // Le voci valide dentro un elenco sporco restano valide: filtriamo il tipo, non il senso.
+  const mixed = assessAiAct({ euMarket: 'yes', role: 'deployer', highRiskUse: ['hr', 42, null, {}] }, null, 'it');
+  ok(mixed.obligations.some((o) => o.id === 'highRiskDeployer'),
+    'aiact/robustezza: le voci valide in un elenco misto contano');
+}
+
+// ── Il blocco anti-SSRF non si riprova ───────────────────────────────────────
+// Senza questo, `fetchText` rifaceva 3 volte la stessa richiesta bloccata con
+// backoff: su una scansione con molte sotto-richieste l'audit sfiorava i 20s.
+{
+  const t0 = Date.now();
+  const r = await fetchText('http://127.0.0.1:1/', { timeout: 15000 });
+  const ms = Date.now() - t0;
+  ok(r.ok === false, 'ssrf/retry: l\'IP interno resta bloccato');
+  ok(/SsrfError|interno/.test(r.error), `ssrf/retry: l'errore dice che è un blocco (${r.error.slice(0, 60)})`);
+  ok(ms < 1000, `ssrf/retry: nessun backoff sul blocco (${ms}ms, prima ≥1800)`);
+}
+
+// ── AI Act: invarianti su TUTTE le combinazioni di risposte ──────────────────
+// Gli assert sopra scelgono i casi a mano: coprono i rami che conosciamo. Questo
+// blocco genera il prodotto cartesiano delle risposte (comprese le domande non
+// risposte) su due date e due esiti di scansione, e verifica ciò che deve valere
+// sempre. È il check che ha trovato il `future` sopravvissuto al fuori-ambito.
+{
+  const DOM = {
+    euMarket: ['yes', 'no', 'unsure', undefined],
+    role: ['none', 'deployer', 'provider', 'both', undefined],
+    interaction: [true, false, undefined],
+    syntheticContent: [true, false, undefined],
+    editorialReview: [true, false, undefined],
+    deepfake: [true, false, undefined],
+    gpai: [true, false, undefined],
+    staffUsingAi: [true, false, undefined],
+    highRiskUse: [['none'], ['hr'], undefined],
+    prohibitedUse: [['none'], ['emotionWorkplace'], undefined],
+  };
+  const SIGNALS = [null, { chatbot: { found: true }, provenance: { found: false }, emotion: { found: true }, euOffer: { found: true } }];
+  const DATES = ['2026-08-03', '2027-12-02'];
+  const SCOPES = ['in', 'out', 'partial', 'unsure', 'likely', 'unlikely'];
+  const ids = QUESTIONS.map((q) => q.id);
+  const bad = new Map();
+  const note = (rule, ctx) => { if (!bad.has(rule)) bad.set(rule, JSON.stringify(ctx).slice(0, 240)); };
+  let cases = 0;
+
+  const check = (a) => {
+    for (const signals of SIGNALS) for (const today of DATES) {
+      cases++;
+      let r;
+      try { r = assessAiAct(a, signals, 'it', today); } catch (e) { note('lancia: ' + e.message, { a, today }); continue; }
+      const v = r.verdict, ctx = { a, today, scanned: !!signals };
+      if (!SCOPES.includes(v.scope)) note('scope fuori elenco: ' + v.scope, ctx);
+      if (!['low', 'medium', 'high'].includes(v.confidence)) note('confidence fuori elenco: ' + v.confidence, ctx);
+      if (v.reasons.some((x) => typeof x !== 'string' || !x.trim())) note('reason vuota o non stringa', ctx);
+      // Una chiave i18n a schermo è un messaggio mancante, non un testo.
+      if (v.reasons.some((x) => x.startsWith('aiact.'))) note('chiave i18n non tradotta', { ...ctx, r: v.reasons });
+
+      const banned = Array.isArray(a.prohibitedUse) && a.prohibitedUse.some((x) => x !== 'none');
+      if (banned && !(v.blocking && v.confidence === 'high' && v.headline === 'blocking')) note('divieto dichiarato non bloccante', ctx);
+
+      // Fuori ambito nessun obbligo dell'AI Act è esigibile: né 'due' né 'future'.
+      // La nLPD è l'eccezione dichiarata — vale in Svizzera comunque.
+      if (v.scope === 'out' && !v.blocking) {
+        const hard = r.obligations.filter((o) => o.severity !== 'conditional' && o.id !== 'nldp');
+        if (hard.length) note('fuori ambito con obblighi esigibili: ' + hard.map((o) => o.id + '/' + o.severity).join(','), ctx);
+      }
+      for (const o of r.obligations) {
+        if (!o.ref || !o.label || !o.why) note('obbligo senza riferimento o testo: ' + o.id, ctx);
+        if (o.from !== 'in vigore' && !/^\d{4}-\d{2}-\d{2}$/.test(o.from)) note('data non ISO: ' + o.id + ' = ' + o.from, ctx);
+        else if (o.id !== 'nldp' && o.inForce !== (o.from <= today)) note('inForce incoerente: ' + o.id, ctx);
+      }
+      const c = r.coverage;
+      if (c.answered > c.applicable || c.applicable > QUESTIONS.length) note('copertura incoerente', { ...ctx, c });
+      if (c.missing.length && v.confidence === 'high' && !v.blocking) note('confidence alta con copertura parziale', { ...ctx, c });
+    }
+  };
+  (function rec(i, a) {
+    if (i === ids.length) return check(a);
+    for (const val of DOM[ids[i]]) rec(i + 1, val === undefined ? a : { ...a, [ids[i]]: val });
+  })(0, {});
+
+  ok(cases > 500000, `aiact/invarianti: combinazioni generate (${cases})`);
+  ok(bad.size === 0, `aiact/invarianti: nessuna violazione — ${[...bad].map(([k, c]) => k + ' ' + c).join(' || ')}`);
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

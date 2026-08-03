@@ -15,6 +15,42 @@ export const AI_CRAWLERS = [
 // Sottoinsieme per il fetch live (impersonazione reale — teniamolo piccolo per non essere invasivi).
 export const LIVE_UA = ['GPTBot', 'ClaudeBot', 'PerplexityBot', 'Googlebot', 'CCBot'];
 
+// Normalizza l'indirizzo digitato dall'utente: aggiunge lo schema se manca e
+// controlla che sia parsabile. Prima questa logica era ripetuta in quattro
+// orchestratori e `new URL` lanciava un `TypeError: Invalid URL` che le route
+// mostravano come «Analisi fallita: TypeError» con stato 500: un indirizzo
+// scritto male è colpa dell'input, non del server, e deve dare 400 con un
+// messaggio leggibile. `badUrl` è il flag che le route usano per distinguerlo.
+export function normUrl(raw) {
+  const fail = (msg) => { const e = new Error(msg); e.badUrl = true; throw e; };
+  // typeof prima di tutto: il body è JSON, un numero o un oggetto arrivano qui
+  // senza sforzo. Con `String(42)` diventava `https://42/` — un host che nessun
+  // DNS risolve, quindi un errore di rete al posto di un errore di input.
+  if (typeof raw !== 'string') fail('Indirizzo del sito mancante');
+  const typed = raw.trim();
+  if (!typed) fail('Indirizzo del sito mancante');
+  // Lo schema va riconosciuto PRIMA di aggiungere `https://`: senza questo,
+  // `file:///etc/passwd` diventava `https://file:///etc/passwd` e veniva
+  // respinto con «senza nome di dominio» — vero ma incomprensibile.
+  // Il punto e le cifre distinguono uno schema da un host con la porta:
+  // `esempio.ch:8080` non è lo schema «esempio.ch», è un indirizzo legittimo.
+  const m = /^([a-z][a-z0-9+.-]*):(\/\/)?(\d*)/i.exec(typed);
+  const isScheme = m && !m[1].includes('.') && (m[2] || !m[3]);
+  if (isScheme && !/^https?$/i.test(m[1])) fail('Sono ammessi solo indirizzi http e https');
+  let u;
+  try { u = new URL(/^https?:\/\//i.test(typed) ? typed : 'https://' + typed); }
+  catch { fail('Indirizzo del sito non valido: ' + typed.slice(0, 80)); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') fail('Sono ammessi solo indirizzi http e https');
+  if (!u.hostname) fail('Indirizzo senza nome di dominio: ' + typed.slice(0, 80));
+  // Un host senza punto non è un sito pubblico: `42`, `localhost`, `intranet`.
+  // Gli IP letterali (v4 puntati, v6 fra parentesi) e i nomi interni li ferma
+  // già il guard SSRF; qui si scarta prima ciò che non è nemmeno un dominio.
+  if (!u.hostname.includes('.') && !u.hostname.startsWith('[')) {
+    fail('Indirizzo senza nome di dominio: ' + typed.slice(0, 80));
+  }
+  return u.href;
+}
+
 export async function fetchText(url, { ua = BROWSER_UA, timeout = 15000, retries = 2 } = {}) {
   let last = { ok: false, status: 0, body: '', error: 'no attempt' };
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -29,6 +65,10 @@ export async function fetchText(url, { ua = BROWSER_UA, timeout = 15000, retries
     } catch (e) {
       clearTimeout(timer);
       last = { ok: false, status: 0, body: '', error: String(e) };
+      // Un blocco anti-SSRF è una decisione, non un guasto passeggero: riprovare
+      // dà tre volte lo stesso esito. Su una scansione con molte sotto-richieste
+      // il backoff inutile portava l'audit oltre i 20s (tetto in produzione: 30).
+      if (e && e.name === 'SsrfError') break;
       if (attempt < retries) await new Promise((r) => setTimeout(r, 600 * (attempt + 1))); // backoff
     }
   }

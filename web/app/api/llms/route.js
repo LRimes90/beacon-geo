@@ -15,13 +15,18 @@ export async function POST(req) {
   let body;
   try { body = await req.json(); } catch { return Response.json({ error: 'JSON non valido' }, { status: 400 }); }
   const { url } = body || {};
-  if (!url) return Response.json({ error: 'Indirizzo del sito mancante' }, { status: 400 });
+  // typeof: le altre route lo controllano già. Senza, un numero o un oggetto
+  // arrivava fino al motore e usciva come 500 («e.trim is not a function»).
+  if (!url || typeof url !== 'string') return Response.json({ error: 'Indirizzo del sito mancante' }, { status: 400 });
   const blocked = await guard(req, body); if (blocked) return blocked;
   try {
     const r = await audit(url);
     const txt = generateLlmsTxt(r.html, r.url);
     return new Response(txt, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   } catch (e) {
+    // Indirizzo scritto male = colpa dell'input: 400 con il messaggio di normUrl,
+    // non un 500 con «TypeError: Invalid URL» addosso all'utente.
+    if (e && e.badUrl) return Response.json({ error: String(e.message) }, { status: 400 });
     return Response.json({ error: 'Generazione fallita: ' + String(e).slice(0, 120) }, { status: 500 });
   }
 }
