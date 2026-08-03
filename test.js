@@ -599,4 +599,36 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(banned.obligations.find((o) => o.id === 'art5').severity === 'blocking', 'aiact/out: art. 5 resta bloccante');
 }
 
+// ── AI Act: il tempo che passa sopra le date dell'art. 113 ──────────────────
+// `from` è un dato statico, `inForce` è un giudizio: senza una data di riferimento
+// iniettabile il motore direbbe "dal 2026-08-02" a chi ha già l'obbligo addosso, e
+// terrebbe l'alto rischio marcato "futuro" anche nel 2028.
+{
+  const answers = { euMarket: 'yes', role: 'provider', interaction: true, staffUsingAi: true, highRiskUse: ['credit'] };
+  const find = (a, id) => a.obligations.find((o) => o.id === id);
+
+  // Vigilia della trasparenza: l'art. 4 è già in forza, l'art. 50 §1 non ancora.
+  const eve = assessAiAct(answers, null, 'it', '2026-08-01');
+  ok(find(eve, 'art4').inForce === true, 'aiact/date: art. 4 in forza già nel 2026');
+  ok(find(eve, 'art50_1').inForce === false, 'aiact/date: il 01.08.2026 l’art. 50 §1 non è ancora in forza');
+  ok(find(eve, 'highRiskProvider').severity === 'future', 'aiact/date: alto rischio ancora futuro nel 2026');
+
+  // Giorno dell'applicabilità: il confine è incluso, non "dal giorno dopo".
+  const day = assessAiAct(answers, null, 'it', '2026-08-02');
+  ok(find(day, 'art50_1').inForce === true, 'aiact/date: il 02.08.2026 l’art. 50 §1 è in forza');
+
+  // Dopo il rinvio del Digital Omnibus: l'alto rischio matura in obbligo esigibile.
+  const later = assessAiAct(answers, null, 'it', '2027-12-02');
+  ok(find(later, 'highRiskProvider').severity === 'due', 'aiact/date: dal 02.12.2027 l’alto rischio è esigibile');
+  ok(later.due.includes('highRiskProvider'), 'aiact/date: maturato, entra in `due`');
+
+  // La nLPD non ha data: è in forza a qualunque data di riferimento.
+  ok(find(later, 'nldp').inForce === true && find(eve, 'nldp').inForce === true, 'aiact/date: la nLPD è senza scadenza');
+
+  // Fuori ambito, un obbligo maturato resta condizionale: la maturazione riguarda
+  // il tempo, non il perimetro — e le due cose non devono annullarsi a vicenda.
+  const outLater = assessAiAct({ euMarket: 'no', role: 'provider', highRiskUse: ['credit'] }, null, 'it', '2027-12-02');
+  ok(find(outLater, 'highRiskProvider').severity === 'conditional', 'aiact/date: fuori ambito il maturato è condizionale');
+}
+
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

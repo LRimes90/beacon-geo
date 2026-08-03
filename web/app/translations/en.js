@@ -136,6 +136,7 @@ export const en = {
   "nessuno già esigibile": "none enforceable yet",
   "si applicherebbe solo con un nesso con l’UE": "would only apply with an EU connection",
   "già in vigore": "already in force",
+  "in vigore dal": "in force since",
   "dal": "from",
   "Nessun obbligo dell’AI Act emerge dalle risposte. Restano gli obblighi di protezione dei dati se tratti dati personali.": "No AI Act obligation follows from your answers. Data protection obligations still apply if you process personal data.",
   "Scadenze di applicabilità": "Applicability deadlines",
