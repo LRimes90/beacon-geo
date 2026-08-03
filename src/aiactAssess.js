@@ -225,7 +225,10 @@ export function decideVerdict(answers = {}, signals = null, obligations = []) {
 // la traduzione avviene solo qui, così i test verificano le decisioni, non le stringhe.
 const SEVERITY_ORDER = { blocking: 0, due: 1, conditional: 2, future: 3 };
 
-export function assessAiAct(answers = {}, signals = null, lang = 'it') {
+// `today` è un parametro e non una chiamata a new Date() dentro la logica: le date
+// dell'art. 113 scadono una dopo l'altra, e un motore che le legge dall'orologio di
+// sistema non è verificabile. Così i test possono asserire il 2027 senza mock.
+export function assessAiAct(answers = {}, signals = null, lang = 'it', today = new Date().toISOString().slice(0, 10)) {
   const t = makeT(lang);
   const raw = deriveObligations(answers, signals);
   const verdict = decideVerdict(answers, signals, raw);
@@ -237,11 +240,21 @@ export function assessAiAct(answers = {}, signals = null, lang = 'it') {
   // dell'art. 5 resta un problema anche fuori dall'Unione.
   const outOfScope = verdict.scope === 'out';
   const obligations = raw
-    .map((o) => ({
-      ...o,
-      severity: outOfScope && o.severity === 'due' && o.id !== 'nldp' ? 'conditional' : o.severity,
-      label: t('aiact.ob.' + o.id),
-    }))
+    .map((o) => {
+      // `from` è una data statica: dire "dal 2026-08-02" il 3 agosto 2026 fa sembrare
+      // una scadenza futura un obbligo già esigibile. Confronto lessicografico: ISO 8601
+      // è ordinato come stringa, niente Date da costruire né fusi da sbagliare.
+      const inForce = o.from === 'in vigore' || o.from <= today;
+      // Un obbligo 'future' la cui data è passata NON è più futuro: senza questa riga
+      // il 2 dicembre 2027 l'alto rischio resterebbe marcato come scadenza lontana.
+      const matured = o.severity === 'future' && inForce ? 'due' : o.severity;
+      return {
+        ...o,
+        inForce,
+        severity: outOfScope && matured === 'due' && o.id !== 'nldp' ? 'conditional' : matured,
+        label: t('aiact.ob.' + o.id),
+      };
+    })
     .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
 
   return {

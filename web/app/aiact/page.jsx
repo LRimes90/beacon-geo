@@ -147,7 +147,7 @@ export default function AiAct() {
                           <div className="oblab">{o.label}</div>
                           <div className="obmeta">
                             <code>{o.ref}</code>
-                            {' · '}{o.from === 'in vigore' ? t('già in vigore') : t('dal') + ' ' + o.from}
+                            {' · '}{o.from === 'in vigore' ? t('già in vigore') : o.inForce ? t('in vigore dal') + ' ' + o.from : t('dal') + ' ' + o.from}
                             {o.severity === 'conditional' && ' · ' + t('si applicherebbe solo con un nesso con l’UE')}
                             {o.why && ' · ' + o.why}
                           </div>
