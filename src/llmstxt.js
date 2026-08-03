@@ -26,8 +26,10 @@ export function significantLinks(html, origin, max = 40) {
     if (/^(#|mailto:|tel:|javascript:)/i.test(href)) continue;
     try { href = new URL(href, origin).href.split('#')[0]; } catch { continue; }
     if (!href.startsWith(origin)) continue;
-    if (seen.has(href)) continue;
-    seen.add(href);
+    // /contatti e /contatti/ sono la stessa pagina: dedup sulla forma senza slash finale
+    const key = href.replace(/\/+$/, '');
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push({ text, href });
     if (out.length >= max) break;
   }
@@ -46,22 +48,52 @@ export function groupBySection(links, origin) {
 }
 const titleCase = (s) => s.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+// L'llms.txt è testo semplice, non HTML: le entità vanno risolte o si legge "L&#039;associazione".
+export function decodeEntities(s) {
+  return String(s || '')
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&([a-z]+);/gi, (_, n) => ({
+      amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+      laquo: '«', raquo: '»', hellip: '…', ndash: '–', mdash: '—',
+      lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', bull: '•', middot: '·',
+      egrave: 'è', eacute: 'é', agrave: 'à', igrave: 'ì', ograve: 'ò', ugrave: 'ù',
+      euro: '€', deg: '°', copy: '©', reg: '®', trade: '™', rarr: '→', larr: '←',
+    })[n.toLowerCase()] || _); // entità sconosciuta: lasciata invariata, meglio del testo mangiato
+}
+
+// Le card dei loop (Elementor, WP) infilano titolo + estratto + CTA dentro un solo <a>:
+// nell'llms.txt serve un'etichetta, non l'articolo. Via la CTA, poi taglio a 90 su parola.
+export function linkLabel(text) {
+  let t = decodeEntities(text)
+    .replace(/\s*(leggi (la storia|tutto|di più|l'articolo)|scopri di più|continua a leggere)\s*[»→>]*\s*$/i, '')
+    .replace(/\s+/g, ' ').trim();
+  if (t.length > 90) t = t.slice(0, 90).replace(/\s+\S*$/, '') + '…';
+  return t;
+}
+
 export function generateLlmsTxt(html, url) {
   const origin = new URL(url).origin;
   const host = new URL(url).host;
-  const brand = deriveBrand(html, host);
-  const desc = (getMeta(html, 'description') || getMeta(html, 'og:description') || '').trim();
-  const groups = groupBySection(significantLinks(html, origin), origin);
+  const brand = decodeEntities(deriveBrand(html, host)).trim();
+  const desc = decodeEntities(getMeta(html, 'description') || getMeta(html, 'og:description') || '').trim();
+  const links = significantLinks(html, origin)
+    .map((l) => ({ ...l, text: linkLabel(l.text) }))
+    // asset e endpoint non sono pagine: in un llms.txt sono rumore (es. "## Wp Content")
+    .filter((l) => !/\/(wp-content|wp-json|wp-admin|wp-includes|feed|cdn-cgi)(\/|$)/i.test(new URL(l.href).pathname));
+  const groups = groupBySection(links, origin);
 
   let out = `# ${brand}\n\n`;
   if (desc) out += `> ${desc}\n\n`;
   out += `Sito: ${origin}\n\n`;
 
-  // top-level (sezione "") come "Pagine principali", poi le altre sezioni con ≥2 pagine
-  const top = groups[''] || [];
+  // Su un sito piatto (WP tipico) quasi ogni pagina è una sezione da sola: se le
+  // scartassimo l'llms.txt resterebbe vuoto. Le sezioni con 1 sola pagina finiscono
+  // in "Pagine principali" insieme ai link top-level.
+  const top = [...(groups[''] || []), ...Object.entries(groups).filter(([s, l]) => s !== '' && l.length === 1).flatMap(([, l]) => l)];
   if (top.length) {
     out += `## Pagine principali\n\n`;
-    for (const l of top.slice(0, 12)) out += `- [${l.text}](${l.href})\n`;
+    for (const l of top.slice(0, 20)) out += `- [${l.text}](${l.href})\n`;
     out += `\n`;
   }
   for (const [seg, list] of Object.entries(groups)) {

@@ -42,7 +42,7 @@ export const es = {
   'structured.jsonld.none': 'sin JSON-LD',
   'structured.jsonld.fix': 'Añade JSON-LD de Schema.org (como mínimo Organization + WebSite)',
   'structured.signals.name': 'Metaetiquetas de indexación/compartición',
-  'structured.signals.detail': '{have}/4 (canonical, hreflang, OG, Twitter)',
+  'structured.signals.detail': '{have}/{total} ({names})',
   'structured.signals.fix': 'Añade canonical + Open Graph + Twitter Card',
   'readability.words.name': 'Contenido en el HTML servido',
   'readability.words.detail': '{words} palabras legibles sin JS',

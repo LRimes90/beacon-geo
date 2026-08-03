@@ -3,6 +3,12 @@
 // Attivazione:  npm i playwright  (poi:  node audit.js <url> --js)
 import { assertSafeUrl } from './ssrf-guard.js';
 
+// Canale browser opzionale: BEACON_BROWSER_CHANNEL=chrome usa il Google Chrome di
+// sistema invece del Chromium bundled. Utile quando un WAF scarta l'headless Chromium
+// (fingerprint/UA). Default = Chromium bundled, per restare portabile su serverless/CI.
+const CHANNEL = process.env.BEACON_BROWSER_CHANNEL || undefined;
+const launchOpts = { headless: true, ...(CHANNEL ? { channel: CHANNEL } : {}) };
+
 export async function renderHtml(url, { timeout = 20000, ua } = {}) {
   // Anti-SSRF: valida l'host prima di aprire il browser headless sull'URL utente.
   try { await assertSafeUrl(url); } catch (e) { return { ok: false, reason: String(e.message || e) }; }
@@ -14,7 +20,7 @@ export async function renderHtml(url, { timeout = 20000, ua } = {}) {
   }
   let browser;
   try {
-    browser = await pw.chromium.launch({ headless: true });
+    browser = await pw.chromium.launch(launchOpts);
     const ctx = await browser.newContext(ua ? { userAgent: ua } : {});
     const page = await ctx.newPage();
     // networkidle = aspetta che la SPA finisca di idratare/caricare i contenuti
@@ -39,7 +45,7 @@ export async function runAxe(url, { timeout = 25000, ua } = {}) {
   try { axe = (await import(/* webpackIgnore: true */ 'axe-core')).default; } catch { return { ok: false, reason: 'axe-core non installato — esegui: npm i axe-core' }; }
   let browser;
   try {
-    browser = await pw.chromium.launch({ headless: true });
+    browser = await pw.chromium.launch(launchOpts);
     const ctx = await browser.newContext(ua ? { userAgent: ua } : {});
     const page = await ctx.newPage();
     await page.goto(url, { waitUntil: 'networkidle', timeout });
@@ -60,7 +66,7 @@ export async function renderPdfBuffer(html, { format = 'A4' } = {}) {
   try { pw = await import(/* webpackIgnore: true */ 'playwright'); } catch { return { ok: false, reason: 'playwright non installato' }; }
   let browser;
   try {
-    browser = await pw.chromium.launch({ headless: true });
+    browser = await pw.chromium.launch(launchOpts);
     const page = await (await browser.newContext()).newPage();
     await page.setContent(html, { waitUntil: 'load' });
     const buffer = await page.pdf({ format, printBackground: true });
@@ -78,7 +84,7 @@ export async function htmlToPdf(html, outPath, { format = 'A4' } = {}) {
   try { pw = await import(/* webpackIgnore: true */ 'playwright'); } catch { return { ok: false, reason: 'playwright non installato — esegui: npm i playwright' }; }
   let browser;
   try {
-    browser = await pw.chromium.launch({ headless: true });
+    browser = await pw.chromium.launch(launchOpts);
     const page = await (await browser.newContext()).newPage();
     await page.setContent(html, { waitUntil: 'load' });
     await page.pdf({ path: outPath, format, printBackground: true });

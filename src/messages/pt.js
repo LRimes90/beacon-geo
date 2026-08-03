@@ -38,7 +38,7 @@ export const pt = {
   'structured.jsonld.none': 'nenhum JSON-LD',
   'structured.jsonld.fix': 'Adiciona JSON-LD Schema.org (pelo menos Organization + WebSite)',
   'structured.signals.name': 'Meta tags de indexação/partilha',
-  'structured.signals.detail': '{have}/4 (canonical, hreflang, OG, Twitter)',
+  'structured.signals.detail': '{have}/{total} ({names})',
   'structured.signals.fix': 'Adiciona canonical + Open Graph + Twitter Card',
   'readability.words.name': 'Conteúdo no HTML servido',
   'readability.words.detail': '{words} palavras legíveis sem JS',

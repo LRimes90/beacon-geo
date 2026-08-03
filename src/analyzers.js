@@ -55,6 +55,13 @@ export function analyzeAgentFiles(files, lang = 'it') {
   };
 }
 
+// Etichette dei segnali meta: identiche in ogni lingua, quindi restano fuori dai dizionari.
+// I mancanti sono marcati con "!" così il dettaglio dice *quale* segnale manca, non solo quanti.
+const SIGNAL_LABELS = (signals) => {
+  const label = { canonical: 'canonical', hreflang: 'hreflang', og: 'OG', twitter: 'Twitter' };
+  return Object.entries(signals).map(([k, ok]) => (ok ? label[k] : label[k] + '!')).join(', ');
+};
+
 // ③ DATI STRUTTURATI E SEO
 export function analyzeStructured(html, lang = 'it') {
   const t = makeT(lang);
@@ -63,14 +70,22 @@ export function analyzeStructured(html, lang = 'it') {
   const types = jsonLdTypes(html);
   const okTitle = title.length >= 15 && title.length <= 65;
   const okDesc = desc.length >= 50 && desc.length <= 160;
+  // hreflang ha senso solo su siti multilingue: pretenderlo da un sito in una sola
+  // lingua spinge ad aggiungere un alternate autoreferenziale che non dice nulla a
+  // nessuno. Sta nel denominatore solo se la pagina dichiara altre lingue.
+  const multilingual = /<meta[^>]+property=["\']og:locale:alternate["\']/i.test(html)
+    || /<link[^>]+rel=["\']alternate["\'][^>]+hreflang=/i.test(html);
   const signals = {
     canonical: /<link[^>]+rel=["\']canonical["\']/i.test(html),
-    hreflang: /<link[^>]+hreflang=/i.test(html),
     og: /<meta[^>]+property=["\']og:/i.test(html),
     twitter: /<meta[^>]+name=["\']twitter:/i.test(html),
   };
+  if (multilingual) {
+    signals.hreflang = /<link[^>]+rel=["\']alternate["\'][^>]+hreflang=/i.test(html);
+  }
+  const sigTotal = Object.keys(signals).length;
   const sigHave = Object.values(signals).filter(Boolean).length;
-  const score = clamp((okTitle ? 20 : title ? 10 : 0) + (okDesc ? 20 : desc ? 10 : 0) + (types.length ? 30 : 0) + pct(sigHave, 4) * 0.3);
+  const score = clamp((okTitle ? 20 : title ? 10 : 0) + (okDesc ? 20 : desc ? 10 : 0) + (types.length ? 30 : 0) + pct(sigHave, sigTotal) * 0.3);
   return {
     score,
     checks: [
@@ -80,9 +95,9 @@ export function analyzeStructured(html, lang = 'it') {
       { name: t('structured.jsonld.name'), status: types.length ? 'good' : 'crit',
         detail: types.length ? t('structured.jsonld.detail', { count: jsonLdCount(html), types: types.join(', ') }) : t('structured.jsonld.none'),
         fix: !types.length ? t('structured.jsonld.fix') : null },
-      { name: t('structured.signals.name'), status: sigHave >= 3 ? 'good' : sigHave >= 1 ? 'warn' : 'crit',
-        detail: t('structured.signals.detail', { have: sigHave }),
-        fix: sigHave < 3 ? t('structured.signals.fix') : null },
+      { name: t('structured.signals.name'), status: sigHave === sigTotal ? 'good' : sigHave >= 1 ? 'warn' : 'crit',
+        detail: t('structured.signals.detail', { have: sigHave, total: sigTotal, names: SIGNAL_LABELS(signals) }),
+        fix: sigHave < sigTotal ? t('structured.signals.fix') : null },
     ],
   };
 }
@@ -142,7 +157,17 @@ export function analyzeOffsite({ ccbotAllowed, inCommonCrawl }, lang = 'it') {
   let score = ccbotAllowed ? 60 : 0;
   if (inCommonCrawl === true) score = 100;
   else if (inCommonCrawl === null && ccbotAllowed) score = 60; // CC non interrogabile: non penalizziamo oltre
+
+  // Se CCBot è ammesso ma l'indice non risponde, di questo modulo non abbiamo
+  // misurato niente: il solo segnale sotto il controllo del sito (CCBot) è a posto
+  // e l'altro è ignoto. Misurato il 2026-07-31: il CDX rispondeva 504 dal proprio
+  // nginx dopo 10s su due indici diversi, e il punteggio del sito scendeva da 100
+  // a 60 senza che il sito fosse cambiato. Un modulo `unmeasured` esce dalla media
+  // pesata: il voto deve dipendere dal sito, non dall'uptime di Common Crawl.
+  const unmeasured = ccbotAllowed && inCommonCrawl === null;
+
   return {
+    ...(unmeasured ? { unmeasured: true } : {}),
     score: clamp(score),
     checks: [
       { name: t('offsite.ccbot.name'), status: ccbotAllowed ? 'good' : 'crit',

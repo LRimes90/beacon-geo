@@ -26,7 +26,7 @@ function pickScores(s) {
   };
 }
 
-// TODO(human): decide chi "vince" ogni asse e quanto è indietro il sito di riferimento (rows[0]).
+// axisSummary(rows): chi "vince" ogni asse e quanto è indietro il sito di riferimento (rows[0]).
 // Firma: axisSummary(rows) dove rows = array di { host, geo, a11y, perf } (punteggi number|null),
 // rows[0] è il sito del cliente/di riferimento. Deve ritornare:
 //   { best: { geo, a11y, perf }, gaps: { geo, a11y, perf } }
