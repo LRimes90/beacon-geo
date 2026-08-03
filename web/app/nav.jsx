@@ -8,6 +8,7 @@ const TOOLS = [
   { href: '/', key: 'geo', label: 'GEO checker' },
   { href: '/a11y', key: 'a11y', label: 'Accessibilità' },
   { href: '/perf', key: 'perf', label: 'Performance' },
+  { href: '/aiact', key: 'aiact', label: 'AI Act' },
   { href: '/report', key: 'report', label: 'Report completo' },
 ];
 

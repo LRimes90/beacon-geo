@@ -204,6 +204,23 @@ button.go:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
 .spec-h .badge{margin-left:9px;font:600 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);
   border:1px solid var(--card-line);border-radius:999px;padding:3px 8px;vertical-align:middle;white-space:nowrap}
 
+/* ---------- AI ACT (questionario + verdetto) ---------- */
+.quiz{margin-top:26px;display:grid;gap:14px}
+.qbox{margin:0;padding:16px 18px;background:var(--card);border:1px solid var(--card-line);border-radius:14px}
+.qbox legend{padding:0 0 2px;font:600 15px var(--serif);color:var(--ink)}
+.qhelp{margin:6px 0 0;font-size:13px;color:var(--faint);max-width:70ch}
+.qopts{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:500 13.5px/1.35 inherit;color:var(--muted);background:transparent;text-align:left;
+  border:1px solid var(--card-line);border-radius:10px;padding:8px 13px;cursor:pointer;transition:.15s}
+.chip:hover{border-color:var(--accent);color:var(--ink)}
+.chip.on{color:#062018;background:var(--accent);border-color:var(--accent);font-weight:700}
+.vmark{font:700 44px/1 var(--serif);flex:none;width:56px;text-align:center}
+.oblist li{display:flex !important;gap:11px;align-items:flex-start}
+.obsev{width:4px;flex:none;align-self:stretch;min-height:2.4em;border-radius:2px}
+.oblab{color:var(--ink);font-size:14px}
+.obmeta{margin-top:3px;font:12.5px var(--mono);color:var(--faint)}
+.disclaim{margin-top:18px;font-size:13px;color:var(--faint);max-width:78ch}
+
 /* ---------- FOOTER (minimale) ---------- */
 .foot{position:relative;z-index:1;border-top:1px solid var(--card-line);margin-top:80px}
 .foot-in{max-width:920px;margin:0 auto;padding:40px 22px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:18px 28px}
