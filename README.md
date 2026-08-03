@@ -31,7 +31,7 @@ node crawl.js stripe.com [--max 8]  # punteggio di SITO (multi-pagina)
 node batch.js [urls...]             # analisi parallela multi-sito
 node compare.js tuosito.com c1.com c2.com  # confronto competitor (GEO+a11y+perf, primo = riferimento) → beacon-compare.html
 node aiact.js tuosito.ch [--json] [--lang=en]  # segnali di trasparenza AI Act in pagina
-node test.js                        # 230 assert sulle funzioni pure
+node test.js                        # 261 assert sulle funzioni pure
 ```
 
 ## Come funziona l'accessibilità
@@ -77,6 +77,7 @@ src/statement.js   generatore bozza dichiarazione di accessibilità
 src/perf.js        Performance via PageSpeed Insights (summarizePsi puro)
 src/aiact.js       AI Act: segnali di trasparenza in pagina (analyzeAiAct puro)
 src/aiactAssess.js AI Act: questionario, obblighi, verdetto a due assi (puro)
+web/app/aiact/questions.mjs testi del questionario su 4 livelli: q · help · detail · examples
 src/suite.js       auditAll: i 3 tool in parallelo (allSettled)
 src/suiteReport.js report combinato HTML/Markdown (funzioni pure)
 src/history.js     storico + diff before-after (snapshot/diff puri)
@@ -85,11 +86,11 @@ src/llmstxt.js     generatore llms.txt
 src/report.js      export GEO Markdown/HTML
 src/guard.js       rate-limit per-IP + verifica Turnstile (inerti senza env)
 weights.json       pesi categorie GEO
-test.js            230 assert (no framework) — girano anche in CI
+test.js            261 assert (no framework) — girano anche in CI
 ```
 
 ## Test & CI
-`node test.js` → 230 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
+`node test.js` → 261 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
 
 ## Deploy
 
