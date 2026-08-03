@@ -29,9 +29,15 @@ export default function AiAct() {
   const [tk, setTk] = useState('');
 
   const set = (id, value) => setAnswers((a) => ({ ...a, [id]: value }));
+  // 'none' è esclusiva: sceglierla azzera le altre, scegliere un'altra la fa cadere.
+  // Senza questa regola si può dire insieme "nessuna di queste" e "assunzioni": il
+  // motore filtra 'none' e leggerebbe alto rischio, cioè la risposta opposta a quella
+  // che l'utente crede di aver dato.
   const toggleMulti = (id, opt) => setAnswers((a) => {
     const cur = a[id] || [];
-    return { ...a, [id]: cur.includes(opt) ? cur.filter((x) => x !== opt) : [...cur, opt] };
+    if (opt === 'none') return { ...a, [id]: cur.includes('none') ? [] : ['none'] };
+    const rest = cur.filter((x) => x !== 'none');
+    return { ...a, [id]: rest.includes(opt) ? rest.filter((x) => x !== opt) : [...rest, opt] };
   });
 
   const ready = REQUIRED.every((id) => answers[id] !== undefined);
@@ -71,6 +77,7 @@ export default function AiAct() {
           <button type="submit" className="go" disabled={loading || !ready}>{loading ? t('Valuto…') : t('Valuta →')}</button>
         </form>
         <p className="opt" style={{ marginTop: 10 }}>{t('L’indirizzo serve a cercare in pagina chatbot, marcatori di provenienza e segnali di mercato UE. Senza indirizzo la valutazione usa solo le tue risposte.')}</p>
+        <p className="opt">{t('Solo le prime due domande sono obbligatorie, ma una domanda senza risposta viene letta come «no»: rispondi a tutte per un perimetro completo.')}</p>
         <Turnstile onToken={setTk} />
 
         <section className="quiz">
@@ -138,6 +145,8 @@ export default function AiAct() {
                   {' · '}{t('ambito materiale')}: {t(SCOPE_WORD[av.verdict.material])}
                   {' · '}{t('ambito territoriale')}: {t(SCOPE_WORD[av.verdict.territorial])}
                   {!av.verdict.scanned && ' · ' + t('senza scansione della pagina')}
+                  {av.coverage?.missing?.length > 0
+                    && ' · ' + t('perimetro parziale') + ' (' + av.coverage.answered + '/' + av.coverage.applicable + ')'}
                 </div>
               </div>
             </div>

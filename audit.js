@@ -6,7 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { fetchText, head, parseRobots, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
+import { fetchText, head, parseRobots, normUrl, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
 import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeOffsite, analyzeRights, analyzeTech, CATEGORY_LABELS } from './src/analyzers.js';
 import { makeT, normalizeLang } from './src/messages/index.js';
 import { generateLlmsTxt } from './src/llmstxt.js';
@@ -16,18 +16,13 @@ import WEIGHTS from './weights.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
-function normalizeUrl(input) {
-  let u = input.trim();
-  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  return new URL(u).href;
-}
 
 // i18n: `lang` (default 'it') seleziona la lingua di check, fix e notice — la CLI
 // e le chiamate esistenti restano invariate (fallback italiano).
 export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   const L = normalizeLang(lang);
   const t = makeT(L);
-  const url = normalizeUrl(rawUrl);
+  const url = normUrl(rawUrl);
   const origin = new URL(url).origin;
   const host = new URL(url).host;
 
@@ -115,7 +110,7 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
 
 export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
   const L = normalizeLang(lang);
-  const url = normalizeUrl(rawUrl);
+  const url = normUrl(rawUrl);
   const origin = new URL(url).origin;
   const host = new URL(url).host;
 

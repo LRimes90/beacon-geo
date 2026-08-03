@@ -13,8 +13,16 @@ export async function POST(req) {
   let body;
   try { body = await req.json(); } catch { return Response.json({ error: 'JSON non valido' }, { status: 400 }); }
   const { audit, org, contact } = body || {};
-  if (!audit || !audit.host) return Response.json({ error: 'Dati audit mancanti' }, { status: 400 });
+  if (!audit || typeof audit !== 'object' || Array.isArray(audit) || typeof audit.host !== 'string' || !audit.host) {
+    return Response.json({ error: 'Dati audit mancanti' }, { status: 400 });
+  }
   const date = new Date().toISOString().slice(0, 10);
-  const md = generateStatement(audit, { org, contact, date });
-  return new Response(md, { headers: { 'Content-Type': 'text/markdown; charset=utf-8' } });
+  // Il generatore itera `result.checks` e `axe.findings`: un audit troncato o con
+  // un campo del tipo sbagliato deve dare 400, non un 500 senza messaggio.
+  try {
+    const md = generateStatement(audit, { org, contact, date });
+    return new Response(md, { headers: { 'Content-Type': 'text/markdown; charset=utf-8' } });
+  } catch {
+    return Response.json({ error: 'Dichiarazione non generata: dati audit incompleti' }, { status: 400 });
+  }
 }

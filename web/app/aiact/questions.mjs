@@ -86,6 +86,7 @@ export const QUESTION_TEXT = {
   },
   deepfake: {
     kind: 'bool',
+    showIf: 'syntheticContent',
     q: 'I contenuti generati raffigurano persone, luoghi o eventi reali in modo verosimile?',
     help: 'È la definizione di deep fake dell’art. 3 §60: somiglianza a persone o fatti esistenti, tale da apparire autentica.',
     detail: 'Servono due condizioni insieme: che il soggetto esista davvero e che il risultato possa essere preso per autentico. Un drago in una foresta non è un deep fake anche se sembra vero, perché il drago non esiste; il volto di un cliente che pronuncia parole mai dette lo è. Se rispondi sì, l’art. 50 §4 chiede di dichiararlo in modo chiaro e visibile a chi guarda.',
@@ -123,15 +124,16 @@ export const QUESTION_TEXT = {
   highRiskUse: {
     kind: 'multi',
     q: 'L’IA interviene in una di queste decisioni sulle persone?',
-    help: 'Selezione multipla. Nessuna? Lascia tutto vuoto.',
+    help: 'Selezione multipla. Se non ne riguarda nessuna, scegli «Nessuna di queste»: serve a distinguere un no da una domanda saltata.',
     detail: 'Sono gli usi ad alto rischio dell’allegato III: casi in cui una decisione automatizzata incide sull’accesso al lavoro, al credito, all’istruzione, ai servizi essenziali o sui diritti fondamentali. Gli obblighi (gestione del rischio, qualità dei dati, sorveglianza umana, registrazione) sono i più pesanti del regolamento e scattano nel 2027-2028: la domanda serve a saperlo adesso, perché adeguarsi richiede mesi, non settimane. Basta che l’IA prepari o influenzi la decisione — non serve che decida da sola.',
     examples: [
       'Software che ordina o scarta i CV ricevuti, anche solo per fare una prima cernita → Assunzioni',
       'Punteggio automatico che decide chi può pagare a rate → Merito creditizio',
       'Riconoscimento facciale per l’accesso ai locali → Identificazione biometrica',
-      'Chatbot che risponde su orari, prezzi e disponibilità → nessuna di queste: lascia tutto vuoto',
+      'Chatbot che risponde su orari, prezzi e disponibilità → Nessuna di queste',
     ],
     options: {
+      none: 'Nessuna di queste',
       hr: 'Assunzioni, selezione, valutazione o licenziamento',
       credit: 'Merito creditizio, prestiti, assicurazioni',
       education: 'Ammissione, valutazione o esami in istruzione e formazione',
@@ -144,15 +146,16 @@ export const QUESTION_TEXT = {
   prohibitedUse: {
     kind: 'multi',
     q: 'Il sistema fa una di queste cose?',
-    help: 'Pratiche vietate dall’art. 5, in divieto dal 2 febbraio 2025. Selezione multipla.',
+    help: 'Pratiche vietate dall’art. 5, in divieto dal 2 febbraio 2025. Selezione multipla: se non ne fai nessuna, scegli «Nessuna di queste».',
     detail: 'Qui non esiste un percorso di adeguamento: le pratiche dell’art. 5 sono vietate dal 2 febbraio 2025 e un sistema che ne compie una va fermato, non messo in regola. Per un’attività commerciale la risposta normale è nessuna. Due precisazioni: il divieto sul riconoscimento delle emozioni riguarda il lavoro e la scuola e ha eccezioni ristrette per motivi medici o di sicurezza; la raccolta massiva di volti è vietata anche se le immagini sono pubbliche.',
     examples: [
       'Software che stima l’umore o l’attenzione dei dipendenti dalle telecamere → Riconosce emozioni sul lavoro',
       'Punteggio generale sulle persone, costruito su comportamenti estranei al servizio, usato per trattarle diversamente → Punteggio sociale',
       'Archivio di volti raccolti da Internet o dalle telecamere per costruire un database di riconoscimento → Raccolta di volti in massa',
-      'Nessuna di queste → lascia tutto vuoto: è la risposta attesa nella grande maggioranza dei casi',
+      'Niente di tutto questo → Nessuna di queste: è la risposta attesa nella grande maggioranza dei casi',
     ],
     options: {
+      none: 'Nessuna di queste',
       emotionWorkplace: 'Riconosce emozioni sul lavoro o a scuola',
       socialScoring: 'Assegna un punteggio sociale alle persone',
       faceScraping: 'Raccoglie volti in massa dal web o dalle telecamere',

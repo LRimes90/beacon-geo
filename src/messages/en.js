@@ -266,6 +266,7 @@ export const en = {
   'aiact.reason.euExcluded': 'No signal of an offering to the EU market',
   'aiact.reason.euUnsureWithSignals': 'You were unsure and the page shows EU signals ({detail}): treated as in scope, as a precaution',
   'aiact.reason.euUnsure': 'You were unsure: the most common case for a Swiss business also serving EU clients',
+  'aiact.reason.partialCoverage': 'Questionnaire only partly filled in ({detail} questions): unanswered questions count as "no", so the obligations listed are a floor, not the full list',
 
   // Obligations
   'aiact.ob.art5': 'Prohibited practices: stop the use and document the assessment',

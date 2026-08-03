@@ -4,12 +4,7 @@
 import { audit } from '../audit.js';
 import { auditA11y } from './a11y.js';
 import { auditPerf } from './perf.js';
-
-function normUrl(raw) {
-  let u = String(raw).trim();
-  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
-  return new URL(u).href;
-}
+import { normUrl } from './lib.js';
 
 // i18n: `lang` (default 'it') viene propagato ai 3 tool e riportato nel risultato,
 // così il report scaricabile può riusare la stessa lingua della scansione.
