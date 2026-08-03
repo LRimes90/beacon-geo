@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt } from './src/lib.js';
+import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
@@ -16,6 +16,9 @@ import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
 import { auditHtmlSnapshot } from './audit.js';
 import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
+import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
+import { deriveObligations, decideVerdict, assessAiAct, euEvidence, OBLIGATIONS, QUESTIONS } from './src/aiactAssess.js';
+import { QUESTION_TEXT, REQUIRED } from './web/app/aiact/questions.mjs';
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
@@ -38,10 +41,29 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const html = `<title> Ciao | Sito </title><meta name="description" content="una descrizione di prova sufficientemente lunga da passare"><script type="application/ld+json">{"@type":"Organization"}</script><header></header><main></main><div></div><img src="a" alt="x"><img src="b">`;
   ok(getTitle(html) === 'Ciao | Sito', 'title estratto e normalizzato');
   ok(getMeta(html, 'description').startsWith('una descrizione'), 'meta description estratta');
+  // regressione: l'apostrofo NON deve chiudere il valore (bug visto su siti italiani)
+  ok(getMeta(`<meta name="description" content="Informativa dell'Associazione: dati e finalita.">`, 'description')
+       === "Informativa dell'Associazione: dati e finalita.",
+     'apostrofo dentro content non tronca la description');
   ok(jsonLdTypes(html).includes('Organization'), 'tipo JSON-LD rilevato');
   ok(semanticRatio(html).semantic === 2, 'tag semantici contati (header+main)');
   ok(imgAlt(html).total === 2 && imgAlt(html).withAlt === 1, 'alt immagini contate');
   ok(wordCount('<p>due parole</p>') === 2, 'word count ignora i tag');
+}
+
+// contentHtml/bodyHtml — quello che sembra un tag ma non è nel DOM non va contato
+{
+  // regressione canmedticino.ch: un "<h1" dentro un commento CSS dava "H1: 2"
+  const trap = `<html><head><style>/* .hero <h1> stile del titolo */</style></head>
+    <body><h1>Unico</h1><script>var t = '<h1>fake</h1>';</script>
+    <!-- <h1>commentato</h1> --><noscript><img src="n"></noscript><img src="v" alt="v"></body></html>`;
+  ok(headings(trap).h1 === 1, 'H1 dentro commenti/style/script non conta');
+  ok(imgAlt(trap).total === 1, 'img dentro noscript non conta (non è nel DOM)');
+  // denominatore = solo il body: i tag di <head> non possono essere semantici
+  const withHead = `<html><head><meta charset="utf-8"><link rel="x"><title>t</title><meta name="a" content="b"></head><body><main><article></article></main></body></html>`;
+  const sr = semanticRatio(withHead);
+  ok(sr.total === 2 && sr.semantic === 2, 'rapporto semantico calcolato sul solo body');
+  ok(links(`<a href="/vero">v</a><!-- <a href="/finto">f</a> -->`, 'x.test').total === 1, 'link nei commenti non contano');
 }
 
 // analyzers — struttura e range punteggio
@@ -53,6 +75,16 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
 
   const empty = analyzeStructured('<div></div>');
   ok(empty.score < 40, 'HTML vuoto → structured critico: ' + empty.score);
+
+  // hreflang: obbligatorio solo se la pagina dichiara altre lingue.
+  const sigCheck = (h) => analyzeStructured(h).checks[2];
+  ok(s.score === 100 && sigCheck(good).status === 'good',
+    'sito monolingue senza hreflang → nessuna penalità: ' + s.score);
+  const multi = good + `<meta property="og:locale:alternate" content="de_CH">`;
+  ok(analyzeStructured(multi).score < 100 && sigCheck(multi).detail.includes('hreflang!'),
+    'sito multilingue senza hreflang → penalizzato e segnale nominato: ' + sigCheck(multi).detail);
+  const multiOk = multi + `<link rel="alternate" hreflang="de-CH" href="/de/">`;
+  ok(analyzeStructured(multiOk).score === 100, 'multilingue con hreflang → pieno: ' + analyzeStructured(multiOk).score);
 }
 
 // audit.js — snapshot HTML per bozze non pubbliche
@@ -85,6 +117,13 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
 {
   ok(analyzeOffsite({ ccbotAllowed: true, inCommonCrawl: true }).score === 100, 'offsite pieno');
   ok(analyzeOffsite({ ccbotAllowed: false, inCommonCrawl: false }).score === 0, 'offsite bloccato');
+  // Indice CC non raggiungibile: modulo fuori dalla media, non 60 mascherato da misura.
+  ok(analyzeOffsite({ ccbotAllowed: true, inCommonCrawl: null }).unmeasured === true,
+    'CC giù + CCBot ammesso → unmeasured');
+  ok(!analyzeOffsite({ ccbotAllowed: false, inCommonCrawl: null }).unmeasured,
+    'CCBot bloccato → misurato comunque, resta nella media');
+  ok(!analyzeOffsite({ ccbotAllowed: true, inCommonCrawl: false }).unmeasured,
+    'CC risponde "nessuna cattura" → è una misura, resta nella media');
 }
 {
   const r = analyzeRights({ tdmrep: true, license: false, contentSignal: false });
@@ -292,6 +331,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const llms = generateLlmsTxt(html, 'https://demo.example');
   ok(!llms.startsWith('# Home'), 'llms.txt NON inizia più con "# Home"');
   ok(llms.includes('## Progetti'), 'llms.txt raggruppa per sezione "Progetti"');
+
+  // regressioni viste su canmedticino.ch (sito WP piatto, italiano)
+  const wp = '<title>Home</title><meta name="description" content="L&#039;associazione dei pazienti.">'
+    + '<a href="/chi-siamo/">Chi Siamo</a><a href="/contatti/">Contatti</a><a href="/contatti">Chiedi orientamento</a>'
+    + '<a href="/wp-content/uploads/x.pdf">Statuto PDF</a>'
+    + '<a href="/storia/">Titolo lungo della storia con estratto che continua a lungo e non finisce mai davvero qui Leggi la storia &rarr;</a>';
+  const l2 = generateLlmsTxt(wp, 'https://demo.example');
+  ok(l2.includes("> L'associazione dei pazienti."), 'llms.txt: entità numeriche decodificate nella description');
+  ok(l2.includes('- [Chi Siamo]') && l2.includes('## Pagine principali'), 'llms.txt: sezioni da 1 pagina finiscono in "Pagine principali"');
+  ok(!l2.includes('wp-content') && !l2.includes('Wp Content'), 'llms.txt: asset wp-content esclusi');
+  ok(!l2.includes('/contatti)'), 'llms.txt: dedup /contatti vs /contatti/');
+  ok(!/Leggi la storia/.test(l2) && !l2.includes('&rarr;'), 'llms.txt: CTA e frecce fuori dalle etichette');
+  ok(!l2.split('\n').some((r) => r.startsWith('- [') && r.indexOf('](') > 95), 'llms.txt: etichette tagliate a 90 caratteri');
 }
 
 // messages/ — i18n del motore: catalogo, interpolazione, whitelist, fallback → italiano
@@ -329,6 +381,18 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(accessibleFormLabels(hidden).total === 0, 'form: hidden/submit non richiedono label');
   const aria = '<textarea aria-label="Messaggio"></textarea>';
   ok(accessibleFormLabels(aria).labeled === 1, 'form: aria-label conta come etichetta');
+  // label IMPLICITA: pattern standard del checkbox consenso (input dentro <label>)
+  const implicit = '<label><input type="checkbox" name="ok" required><span>Acconsento al trattamento</span></label>';
+  ok(accessibleFormLabels(implicit).total === 1 && accessibleFormLabels(implicit).labeled === 1, 'form: label implicita (input dentro label) → labeled');
+  const emptyLabel = '<label><input type="checkbox" name="ok"></label>';
+  ok(accessibleFormLabels(emptyLabel).labeled === 0, 'form: label senza testo non etichetta');
+  // honeypot antispam: fuori dalla accessibility tree, non va conteggiato
+  const honeypot = '<form><input type="email" aria-label="Email"><div aria-hidden="true"><input type="text" name="hp_website"></div></form>';
+  const hp = accessibleFormLabels(honeypot);
+  ok(hp.total === 1 && hp.labeled === 1, 'form: campo in sottoalbero aria-hidden escluso (honeypot)');
+  // regressione: l'esclusione vale solo DENTRO il sottoalbero, non dopo la sua chiusura
+  const afterHidden = '<div aria-hidden="true"><span>x</span></div><input type="text" name="q">';
+  ok(accessibleFormLabels(afterHidden).total === 1, 'form: campo dopo la chiusura di aria-hidden resta contato');
 }
 
 // anti-SSRF — blocca risorse interne, passa IP pubblici (solo IP: niente DNS/rete nei test)
@@ -343,6 +407,196 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   try { await assertSafeUrl('file:///etc/passwd'); } catch { schemeBlocked = true; }
   ok(schemeBlocked, 'ssrf: assertSafeUrl blocca schema file://');
   ok((await assertSafeUrl('http://1.1.1.1/')).hostname === '1.1.1.1', 'ssrf: assertSafeUrl passa IP pubblico');
+}
+
+// ── AI Act: rilevamento segnali (funzioni pure, nessuna rete) ───────────────
+{
+  const bot = '<html><body><script src="https://widget.intercom.io/widget/abc"></script><p>Ciao</p></body></html>';
+  const s1 = detectAiSignals(bot, { url: 'https://x.ch/' });
+  ok(s1.chatbots.includes('Intercom'), 'aiact: vendor chatbot riconosciuto');
+  ok(s1.botDisclosure === false, 'aiact: nessuna disclosure nel testo visibile');
+  const a1 = analyzeAiAct(s1);
+  ok(a1.checks[0].status === 'crit', 'aiact: chatbot senza disclosure = critico (art. 50 §1)');
+  ok(a1.informational === true, 'aiact: categoria informativa, non pesa sullo score GEO');
+
+  // La disclosure conta solo se è TESTO VISIBILE: una classe "ai-chat" non è comunicazione.
+  const attrOnly = '<html><body><div class="ai-assistant-widget"></div></body></html>';
+  ok(detectAiSignals(attrOnly).botDisclosure === false, 'aiact: attributo non vale come disclosure');
+  const disclosed = bot.replace('<p>Ciao</p>', '<p>Stai parlando con un assistente virtuale automatico.</p>');
+  ok(analyzeAiAct(detectAiSignals(disclosed)).checks[0].status === 'good', 'aiact: disclosure nel testo = ok');
+  // Il testo dentro <script> non è visibile all'utente → non deve valere come disclosure.
+  const inScript = '<html><body><script>var x="assistente virtuale";</script><div class="chat-widget"></div></body></html>';
+  ok(detectAiSignals(inScript).botDisclosure === false, 'aiact: testo dentro <script> escluso');
+
+  const emo = '<script src="/js/face-api.min.js"></script>';
+  ok(analyzeAiAct(detectAiSignals(emo)).checks[1].status === 'crit', 'aiact: riconoscimento emozioni = critico (art. 5)');
+  ok(analyzeAiAct(detectAiSignals('<p>ciao</p>')).checks[1].status === 'good', 'aiact: nessuna biometria = ok');
+
+  // La marcatura dei contenuti resta 'info': dall'HTML non si sa se il contenuto è generato.
+  ok(analyzeAiAct(detectAiSignals('<p>x</p>')).checks[2].status === 'info', 'aiact: provenienza sempre informativa');
+
+  const eu = detectAiSignals('<link rel="alternate" hreflang="de" href="/de"><p>Prezzo 20 €</p>', { url: 'https://x.ch/' });
+  ok(eu.euSignals.includes('hreflang UE') && eu.euSignals.includes('prezzi in euro'), 'aiact: segnali di mercato UE');
+}
+
+// ── AI Act: obblighi derivati ───────────────────────────────────────────────
+{
+  const ids = (o) => o.map((x) => x.id);
+  const deployer = deriveObligations({ role: 'deployer', interaction: true, euMarket: 'yes' });
+  ok(ids(deployer).includes('art50_1') && ids(deployer).includes('art4'), 'aiact: deployer con chatbot → art. 50 §1 + art. 4');
+  ok(!ids(deployer).includes('art50_2'), 'aiact: art. 50 §2 solo per il fornitore');
+  ok(ids(deriveObligations({ role: 'provider', syntheticContent: true })).includes('art50_2'), 'aiact: fornitore generativo → art. 50 §2');
+
+  // Responsabilità editoriale umana = esenzione dell'art. 50 §4 c. 2 (pipeline blog con review).
+  ok(ids(deriveObligations({ role: 'deployer', syntheticContent: true, editorialReview: false })).includes('art50_4_text'), 'aiact: testi IA senza review → obbligo');
+  ok(!ids(deriveObligations({ role: 'deployer', syntheticContent: true, editorialReview: true })).includes('art50_4_text'), 'aiact: review editoriale = esente');
+
+  // Lo scan attiva un obbligo che l'utente non ha dichiarato.
+  const fromScan = deriveObligations({ role: 'none' }, { chatbots: ['Tidio'] });
+  ok(ids(fromScan).includes('art50_1'), 'aiact: chatbot trovato dallo scan attiva l’obbligo');
+
+  const hr = deriveObligations({ role: 'deployer', highRiskUse: ['hr'] });
+  ok(ids(hr).includes('highRiskDeployer') && !ids(hr).includes('highRiskProvider'), 'aiact: alto rischio → obblighi da utilizzatore');
+  ok(deriveObligations({ role: 'deployer', prohibitedUse: ['socialScoring'] }).some((o) => o.severity === 'blocking'), 'aiact: pratica vietata = blocking');
+  ok(deriveObligations({ role: 'none' }).length === 0, 'aiact: nessuna IA, nessun segnale → nessun obbligo');
+  // Le date rinviate dal Digital Omnibus non devono tornare al 2026 per sbaglio.
+  ok(hr.find((o) => o.id === 'highRiskDeployer').from === '2027-12-02', 'aiact: alto rischio rinviato al 02.12.2027');
+  ok(OBLIGATIONS.art50_1.from === '2026-08-02', 'aiact: trasparenza applicabile dal 02.08.2026');
+}
+
+// ── AI Act: verdetto di ambito ──────────────────────────────────────────────
+{
+  const v = (a, s) => decideVerdict(a, s, deriveObligations(a, s));
+
+  ok(v({ role: 'deployer', euMarket: 'yes' }).scope === 'in', 'aiact: IA + mercato UE dichiarato = dentro');
+  ok(v({ role: 'deployer', euMarket: 'yes' }).confidence === 'high', 'aiact: dichiarazione esplicita = alta confidenza');
+  ok(v({ role: 'none' }, { chatbots: [], emotion: [], euSignals: [] }).scope === 'out', 'aiact: nessuna IA = fuori');
+
+  // Asse materiale: senza IA il territorio è irrilevante.
+  ok(v({ role: 'none', euMarket: 'yes' }, { chatbots: [], emotion: [], euSignals: ['hreflang UE'] }).scope === 'out', 'aiact: mercato UE senza IA resta fuori');
+
+  // Tensione 1: l'utente dice "no UE" ma i segnali forti dicono il contrario.
+  const contradictEu = v({ role: 'deployer', euMarket: 'no' }, { chatbots: ['Crisp'], euSignals: ['hreflang UE', 'prezzi in euro'] });
+  ok(contradictEu.scope === 'likely', 'aiact: segnali UE forti contro un "no" → likely, non sovrascritto');
+  ok(contradictEu.reasons.some((r) => r.key === 'euContradiction'), 'aiact: la contraddizione UE è motivata all’utente');
+  // Segnali deboli non bastano a contraddire: un sito .ch che cita un dominio .it resta fuori ambito probabile.
+  ok(v({ role: 'deployer', euMarket: 'no' }, { chatbots: [], euSignals: ['dominio o riferimento UE', 'cookie banner GDPR'] }).scope === 'unlikely', 'aiact: segnali UE deboli non ribaltano il "no"');
+  ok(v({ role: 'deployer', euMarket: 'no' }, { chatbots: [], euSignals: [] }).scope === 'out', 'aiact: nessun nesso UE = fuori');
+
+  // Tensione 2: "nessuna IA" ma la pagina ha un chatbot → lo scan prova l'esistenza.
+  const contradictAi = v({ role: 'none', euMarket: 'yes' }, { chatbots: ['Tidio'], euSignals: [] });
+  ok(contradictAi.material === 'likely' && contradictAi.headline === 'contradiction', 'aiact: chatbot in pagina smentisce "nessuna IA"');
+  ok(contradictAi.confidence === 'low', 'aiact: contraddizione = confidenza bassa');
+
+  // Tensione 3: 'unsure' ha un livello proprio, e sale a 'in' se la pagina lo conferma.
+  ok(v({ role: 'deployer', euMarket: 'unsure' }, { chatbots: [], euSignals: [] }).scope === 'likely', 'aiact: "non lo so" = likely');
+  ok(v({ role: 'deployer', euMarket: 'unsure' }, { chatbots: [], euSignals: ['hreflang UE'] }).scope === 'in', 'aiact: "non lo so" + segnale forte = dentro');
+
+  // Le pratiche vietate scavalcano l'ambito: problema anche per un sito solo svizzero.
+  const banned = v({ role: 'deployer', euMarket: 'no', prohibitedUse: ['emotionWorkplace'] }, { chatbots: [], euSignals: [] });
+  ok(banned.blocking === true && banned.headline === 'blocking', 'aiact: pratica vietata scavalca il verdetto di ambito');
+
+  // Senza scan la valutazione funziona comunque (solo questionario).
+  const noScan = v({ role: 'deployer', euMarket: 'yes' }, null);
+  ok(noScan.scope === 'in' && noScan.scanned === false, 'aiact: verdetto valido anche senza scansione');
+  ok(euEvidence(null) === 0, 'aiact: euEvidence tollera signals null');
+}
+
+// ── AI Act: assemblaggio + i18n ─────────────────────────────────────────────
+{
+  const r = assessAiAct({ role: 'deployer', interaction: true, euMarket: 'yes', highRiskUse: ['hr'] }, null, 'it');
+  ok(r.verdict.title.length > 10 && !/^aiact\./.test(r.verdict.title), 'aiact: titolo del verdetto tradotto');
+  ok(r.obligations.every((o) => o.label && !/^aiact\.ob\./.test(o.label)), 'aiact: obblighi con etichetta tradotta');
+  ok(r.obligations[0].severity !== 'future', 'aiact: obblighi ordinati per urgenza');
+  ok(!r.due.includes('highRiskDeployer'), 'aiact: le scadenze future non stanno tra gli obblighi già dovuti');
+  ok(/non attesta la conformità/i.test(r.disclaimer), 'aiact: il disclaimer nega esplicitamente l’attestazione di conformità');
+  const en = assessAiAct({ role: 'deployer', euMarket: 'yes' }, null, 'en');
+  ok(/scope of the AI Act/i.test(en.verdict.title), 'aiact: inglese tradotto');
+  // de/fr/es/pt non tradotti: fallback per-chiave sull'italiano, non la chiave grezza.
+  const de = assessAiAct({ role: 'deployer', euMarket: 'yes' }, null, 'de');
+  ok(!/^aiact\./.test(de.verdict.title), 'aiact: lingue non tradotte ricadono sull’italiano');
+}
+
+// ── AI Act: falsi positivi trovati su siti reali (regressione) ──────────────
+// Entrambi rilevati provando la CLI su intercom.com: il primo etichettava un link
+// marketing come plugin WordPress, il secondo leggeva le classi Tailwind come domini UE.
+{
+  const s1 = detectAiSignals('<html><body><a href="https://fin.ai/ai-engine">AI Engine</a></body></html>');
+  ok(!s1.chatbots.includes('AI Engine (WP)'), 'aiact: un link "ai-engine" non è il plugin AI Engine');
+  const s2 = detectAiSignals('<html><head><script src="/wp-content/plugins/ai-engine/app/chatbot.js"></script></head><body>x</body></html>');
+  ok(s2.chatbots.includes('AI Engine (WP)'), 'aiact: il plugin AI Engine vero viene rilevato');
+
+  const tw = detectAiSignals('<html><head><style>.pl-1{padding-left:4px}.pt-0{padding-top:0}.at-x{top:0}</style></head><body>x</body></html>');
+  ok(!tw.euSignals.includes('dominio o riferimento UE'), 'aiact: le classi CSS Tailwind non sono domini UE');
+  const eu = detectAiSignals('<html><body><a href="https://esempio.it/contatti">Contatti</a></body></html>');
+  ok(eu.euSignals.includes('dominio o riferimento UE'), 'aiact: un dominio .it in un URL è un segnale UE');
+
+  // Pagina muta: un solo controllo valutabile → nessun punteggio, non 100/100.
+  const mute = analyzeAiAct(detectAiSignals('<html><body><p>Ciao</p></body></html>'), 'it');
+  ok(mute.score === null, 'aiact: niente punteggio quando non c’è nulla da valutare');
+  const withBot = analyzeAiAct(detectAiSignals('<html><body><script src="https://embed.tawk.to/x/default"></script><p>Assistente virtuale</p></body></html>'), 'it');
+  ok(typeof withBot.score === 'number', 'aiact: con un chatbot il punteggio esiste');
+
+  const docs = detectAiSignals('<html><body><p>Documentiamo api.openai.com nel nostro blog.</p></body></html>');
+  ok(!docs.chatbots.includes('OpenAI diretto'), 'aiact: menzionare api.openai.com non è usarlo');
+  const call = detectAiSignals('<html><script>fetch("https://api.openai.com/v1/chat/completions")</script><body>x</body></html>');
+  ok(call.chatbots.includes('OpenAI diretto'), 'aiact: la chiamata reale a /v1 viene rilevata');
+}
+
+// ── AI Act: la UI copre il questionario del motore (guardia anti-deriva) ─────
+// Il testo delle domande vive nel web (web/app/aiact/questions.js) perché la
+// chiave i18n è la stringa italiana; il motore possiede gli id e i tipi. Se i due
+// divergono, a schermo compaiono id nudi o opzioni che il motore ignora: qui rompe.
+{
+  const uiIds = Object.keys(QUESTION_TEXT);
+  ok(uiIds.length === QUESTIONS.length, 'aiact/ui: stesso numero di domande nel motore e nella UI');
+  for (const q of QUESTIONS) {
+    const ui = QUESTION_TEXT[q.id];
+    ok(!!ui, `aiact/ui: testo presente per la domanda ${q.id}`);
+    ok(ui.kind === q.kind, `aiact/ui: tipo coerente per ${q.id}`);
+    if (q.options) {
+      const uiOpts = Object.keys(ui.options || {});
+      ok(uiOpts.length === q.options.length && q.options.every((o) => ui.options[o]),
+        `aiact/ui: tutte le opzioni etichettate per ${q.id}`);
+    } else {
+      ok(!ui.options, `aiact/ui: nessuna opzione spuria su ${q.id} (bool)`);
+    }
+  }
+  ok(REQUIRED.every((id) => QUESTION_TEXT[id]), 'aiact/ui: le domande obbligatorie esistono');
+  ok(Object.values(QUESTION_TEXT).every((q) => !q.showIf || QUESTION_TEXT[q.showIf]),
+    'aiact/ui: ogni showIf punta a una domanda esistente');
+  // Il verdetto deve essere calcolabile con le sole risposte obbligatorie.
+  const minimal = assessAiAct(Object.fromEntries(REQUIRED.map((id) => [id, id === 'role' ? 'deployer' : 'yes'])), null, 'it');
+  ok(minimal.verdict.title && minimal.obligations.length > 0, 'aiact/ui: le risposte obbligatorie bastano per un verdetto');
+}
+
+// ── AI Act: contraddizione e obblighi fuori ambito ──────────────────────────
+// Caso reale (tidio.com): l'utente dichiara "nessuna IA, solo Svizzera" ma la
+// pagina monta un chatbot. Il titolo non deve confermare la risposta sbagliata,
+// e l'obbligo dell'art. 50 §1 non deve comparire come già esigibile.
+{
+  const answers = { role: 'none', euMarket: 'no' };
+  const signals = { chatbots: ['Tidio'], emotion: [], euSignals: [] };
+  const a = assessAiAct(answers, signals, 'it');
+  ok(a.verdict.scope === 'out', 'aiact/out: senza nesso UE l’ambito resta fuori');
+  ok(a.verdict.headline === 'contradiction', 'aiact/out: la contraddizione vince sul titolo "fuori"');
+  const art50 = a.obligations.find((o) => o.id === 'art50_1');
+  ok(art50 && art50.severity === 'conditional', 'aiact/out: art. 50 §1 marcato condizionale, non esigibile');
+  ok(!a.due.includes('art50_1'), 'aiact/out: gli obblighi condizionali non entrano in `due`');
+
+  // Nessuna contraddizione, nessun segnale: verdetto pulito "fuori".
+  const clean = assessAiAct(answers, { chatbots: [], emotion: [], euSignals: [] }, 'it');
+  ok(clean.verdict.headline === 'out', 'aiact/out: senza segnali il titolo è "fuori"');
+
+  // La nLPD non si annacqua mai: vale in Svizzera indipendentemente dall'AI Act.
+  const withData = assessAiAct({ ...answers, staffUsingAi: true }, null, 'it');
+  const nldp = withData.obligations.find((o) => o.id === 'nldp');
+  if (nldp) ok(nldp.severity === 'due', 'aiact/out: la nLPD resta esigibile anche fuori ambito');
+
+  // Una pratica vietata resta bloccante anche fuori dall'Unione.
+  const banned = assessAiAct({ ...answers, prohibitedUse: ['socialScoring'] }, null, 'it');
+  ok(banned.verdict.headline === 'blocking', 'aiact/out: la pratica vietata scavalca il "fuori"');
+  ok(banned.obligations.find((o) => o.id === 'art5').severity === 'blocking', 'aiact/out: art. 5 resta bloccante');
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);
