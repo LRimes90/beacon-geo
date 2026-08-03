@@ -64,11 +64,13 @@ export async function fetchText(url, { ua = BROWSER_UA, timeout = 15000, retries
       return { ok: res.ok, status: res.status, body, finalUrl };
     } catch (e) {
       clearTimeout(timer);
-      last = { ok: false, status: 0, body: '', error: String(e) };
+      last = { ok: false, status: 0, body: '', error: String((e && e.message) || e) };
       // Un blocco anti-SSRF è una decisione, non un guasto passeggero: riprovare
       // dà tre volte lo stesso esito. Su una scansione con molte sotto-richieste
       // il backoff inutile portava l'audit oltre i 20s (tetto in produzione: 30).
-      if (e && e.name === 'SsrfError') break;
+      // `blocked` distingue «indirizzo rifiutato» (colpa di ciò che è stato
+      // scritto) da «sito che non risponde»: chi chiama sceglie 400 o 502.
+      if (e && e.name === 'SsrfError') { last.blocked = true; break; }
       if (attempt < retries) await new Promise((r) => setTimeout(r, 600 * (attempt + 1))); // backoff
     }
   }

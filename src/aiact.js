@@ -239,6 +239,11 @@ export async function auditAiAct(rawUrl, { lang = 'it' } = {}) {
     url,
     host: new URL(url).host,
     fetchedOk: page.ok,
+    // Perché la scansione non è riuscita. Il nome NON è `error`: nel resto del
+    // motore `x.error` significa «questo audit è fallito del tutto», e qui la
+    // scansione è facoltativa — il questionario resta valido senza di essa.
+    scanError: page.ok ? undefined : page.error,
+    blocked: page.blocked || undefined,
     result: signals ? analyzeAiAct(signals, lang) : null,
   };
 }

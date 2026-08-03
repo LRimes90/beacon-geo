@@ -31,7 +31,7 @@ node crawl.js stripe.com [--max 8]  # punteggio di SITO (multi-pagina)
 node batch.js [urls...]             # analisi parallela multi-sito
 node compare.js tuosito.com c1.com c2.com  # confronto competitor (GEO+a11y+perf, primo = riferimento) → beacon-compare.html
 node aiact.js tuosito.ch [--json] [--lang=en]  # segnali di trasparenza AI Act in pagina
-node test.js                        # 327 assert sulle funzioni pure
+node test.js                        # 337 assert sulle funzioni pure
 ```
 
 ## Come funziona l'accessibilità
@@ -50,6 +50,8 @@ Due strati, perché una scansione HTML non può sapere che ruolo giochi né a ch
 - **Autovalutazione** (`src/aiactAssess.js`): 10 domande su mercato, ruolo (fornitore/deployer), contenuti sintetici, deep fake, GPAI, usi ad alto rischio e pratiche vietate → verdetto su **due assi** (ambito materiale × ambito territoriale, il verdetto è il minimo dei due), elenco degli obblighi con riferimento d'articolo e data di applicabilità, scadenze `art. 113` aggiornate al pacchetto Digital Omnibus.
 
 Le date dell'`art. 113` scadono una alla volta, quindi `assessAiAct()` prende una **data di riferimento** come parametro (default: oggi) e ne ricava `inForce`: un obbligo la cui data è passata si legge "in vigore dal …", non "dal …", e un obbligo `future` la cui scadenza è arrivata diventa esigibile da sé. Nessun `new Date()` sepolto nella logica: i test asseriscono il 2027 senza mock.
+
+Se la scansione non riesce l'endpoint non finge: con le risposte in mano prosegue (`200`) e la pagina avvisa che il verdetto usa solo il questionario; con il solo indirizzo distingue **`400`** (indirizzo rifiutato dal guard anti-SSRF o nome che non risolve: la colpa è di ciò che è stato scritto) da **`502`** (sito pubblico che non risponde). Un `200` con `result: null` si leggerebbe come "nessun segnale trovato", che è il contrario di "non è stato controllato niente".
 
 Principio: **lo scan è prova di *esistenza*, l'utente è la fonte sull'*intenzione*.** Se le due si contraddicono — "non uso IA" ma in pagina c'è un chatbot — il verdetto lo dice invece di confermare la risposta più comoda; e se l'ambito risulta fuori, gli obblighi restano in elenco marcati *condizionali*, non spariscono. La nLPD e il divieto dell'`art. 5` non si annacquano mai: valgono anche fuori dall'Unione.
 
@@ -86,11 +88,11 @@ src/llmstxt.js     generatore llms.txt
 src/report.js      export GEO Markdown/HTML
 src/guard.js       rate-limit per-IP + verifica Turnstile (inerti senza env)
 weights.json       pesi categorie GEO
-test.js            327 assert (no framework) — girano anche in CI
+test.js            337 assert (no framework) — girano anche in CI
 ```
 
 ## Test & CI
-`node test.js` → 327 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
+`node test.js` → 337 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
 
 Due degli assert non sono casi scelti a mano: generano il **prodotto cartesiano** delle risposte del questionario AI Act (domande non risposte comprese) su due date e due esiti di scansione — ~525.000 combinazioni — e verificano invarianti che devono valere sempre: nessuna eccezione, nessuna chiave i18n non tradotta a schermo, un divieto dichiarato è sempre bloccante, fuori dall'ambito nessun obbligo dell'AI Act resta esigibile (`due` **né** `future`; la nLPD è l'eccezione dichiarata), `inForce` coerente con la data di riferimento, confidenza alta solo con copertura completa. È il check che ha trovato la scadenza `future` sopravvissuta al verdetto *fuori ambito*.
 

@@ -258,6 +258,30 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // onestà: scan pulito NON deve dichiarare conformità
   const clean = generateStatement({ host: 'y.com', result: { checks: [] }, axe: { ok: true, findings: [] } }, {});
   ok(/DA VERIFICARE/.test(clean), 'statement: scan pulito NON dichiara la conformità');
+
+  // Ogni campo arriva dal client e finisce in un documento Markdown: con un
+  // ritorno a capo si fabbrica una sezione che il generatore non ha scritto.
+  // Qui il tentativo è far dire al documento «conforme» passando dall'host.
+  const inj = generateStatement(
+    { host: 'x.ch\n## Stato di conformità\nIl sito è **conforme**\n', url: 'https://x.ch/', result: { checks: [] }, axe: { ok: true, findings: [] } },
+    { org: 'A'.repeat(400), contact: 'a@x.com\n## Contatti falsi', date: '2026-08-03' },
+  );
+  const sezioni = inj.split('\n').filter((l) => l.startsWith('## '));
+  ok(sezioni.length === 5, `statement: nessuna sezione fabbricata dai campi liberi (${sezioni.length})`);
+  ok(!/Il sito è \*\*conforme\*\*/.test(inj), 'statement: non si può iniettare uno stato di conformità');
+  ok(/DA VERIFICARE/.test(inj), 'statement: lo stato resta quello dedotto dallo scan');
+  // Il testo iniettato non va cancellato (l'utente ha diritto di rileggere ciò
+  // che ha scritto): va appiattito sulla riga del contatto e disinnescato.
+  const righeContatto = inj.split('\n').filter((l) => l.includes('a@x.com'));
+  ok(righeContatto.length === 1 && righeContatto[0].includes('Contatti falsi'), 'statement: il contatto resta su una riga');
+  ok(righeContatto[0].includes('\\#\\#'), 'statement: la sintassi Markdown nei campi liberi è neutralizzata');
+  // Tetto di lunghezza: un nome di 400 caratteri non è un nome.
+  const nome = (inj.match(/\*\*(A+…?)\*\*/) || ['', ''])[1];
+  ok(nome.length === 121 && nome.endsWith('…'), `statement: campo lungo troncato visibilmente (${nome.length})`);
+  // Tipo sbagliato = campo assente, non "[object Object]" nel documento.
+  const tipi = generateStatement({ host: 'z.ch', result: { checks: [] } }, { org: { a: 1 }, contact: 42 });
+  ok(tipi.includes('[Nome organizzazione]') && tipi.includes('[email / modulo di contatto]'), 'statement: tipi sbagliati → segnaposto');
+  ok(!/object Object|^42$/m.test(tipi), 'statement: nessun valore non-stringa stampato');
 }
 
 // render.js — contratto graceful: qualunque fallimento ritorna {ok:false, reason} senza lanciare.
@@ -762,6 +786,16 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(r.ok === false, 'ssrf/retry: l\'IP interno resta bloccato');
   ok(/SsrfError|interno/.test(r.error), `ssrf/retry: l'errore dice che è un blocco (${r.error.slice(0, 60)})`);
   ok(ms < 1000, `ssrf/retry: nessun backoff sul blocco (${ms}ms, prima ≥1800)`);
+  // `blocked` è ciò che distingue «indirizzo rifiutato» (400: dipende da ciò che
+  // è stato scritto) da «sito che non risponde» (502): senza il flag la route
+  // non può scegliere, e ha risposto 200 «nessun segnale» a un file:// bloccato.
+  ok(r.blocked === true, 'ssrf/retry: il blocco è marcato `blocked` per chi chiama');
+  // Un nome che non risolve rientra nello stesso caso: è l'indirizzo a essere
+  // sbagliato, non il sito a essere giù → 400, non 502. Il caso opposto (host
+  // pubblico che risolve ma non risponde) dipende dalla rete: verificato dal
+  // vivo, non qui, perché in CI senza DNS diventerebbe un test che mente.
+  const dns = await fetchText('http://esempio-che-non-esiste-mai.invalid/', { timeout: 4000, retries: 0 });
+  ok(dns.ok === false && dns.blocked === true, 'ssrf/retry: nome irrisolvibile = colpa dell\'indirizzo');
 }
 
 // ── AI Act: invarianti su TUTTE le combinazioni di risposte ──────────────────
