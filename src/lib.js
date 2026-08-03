@@ -69,7 +69,7 @@ export async function fetchText(url, { ua = BROWSER_UA, timeout = 15000, retries
       // dà tre volte lo stesso esito. Su una scansione con molte sotto-richieste
       // il backoff inutile portava l'audit oltre i 20s (tetto in produzione: 30).
       // `blocked` distingue «indirizzo rifiutato» (colpa di ciò che è stato
-      // scritto) da «sito che non risponde»: chi chiama sceglie 400 o 502.
+      // scritto) da «sito che non risponde»: chi chiama sceglie 400 o 424.
       if (e && e.name === 'SsrfError') { last.blocked = true; break; }
       if (attempt < retries) await new Promise((r) => setTimeout(r, 600 * (attempt + 1))); // backoff
     }

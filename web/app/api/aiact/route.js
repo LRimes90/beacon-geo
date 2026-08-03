@@ -33,10 +33,18 @@ export async function POST(req) {
     // con `result: null` si legge come «nessun segnale trovato», che è il
     // contrario della verità: non è stato controllato niente. Con le risposte in
     // mano invece si prosegue (200) e la UI avvisa che la scansione è saltata.
+    //
+    // 424 e non 502 anche se «gateway» descriverebbe meglio il caso: davanti
+    // all'app c'è Cloudflare, che di ogni 5xx dell'origine butta il corpo e
+    // serve la propria pagina «Bad gateway». Verificato interrogando l'origine
+    // in diretta: il JSON parte giusto e non arriva. I 4xx passano intatti,
+    // quindi il messaggio utile all'utente sopravvive solo così. `424 Failed
+    // Dependency` dice il vero: la richiesta è fallita perché è fallita una
+    // dipendenza (il sito da scansionare), non l'analisi in sé.
     if (scan && !scan.fetchedOk && !answers) {
       return scan.blocked
         ? Response.json({ error: msg(l, 'aiact.scan.rejected', { detail: scan.scanError }) }, { status: 400 })
-        : Response.json({ error: msg(l, 'aiact.scan.unreachable') }, { status: 502 });
+        : Response.json({ error: msg(l, 'aiact.scan.unreachable') }, { status: 424 });
     }
     const signals = scan && scan.result ? scan.result.signals : null;
     const assessment = answers ? assessAiAct(answers, signals, l) : null;

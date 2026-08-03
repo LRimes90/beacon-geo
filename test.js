@@ -787,15 +787,21 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(/SsrfError|interno/.test(r.error), `ssrf/retry: l'errore dice che è un blocco (${r.error.slice(0, 60)})`);
   ok(ms < 1000, `ssrf/retry: nessun backoff sul blocco (${ms}ms, prima ≥1800)`);
   // `blocked` è ciò che distingue «indirizzo rifiutato» (400: dipende da ciò che
-  // è stato scritto) da «sito che non risponde» (502): senza il flag la route
+  // è stato scritto) da «sito che non risponde» (424): senza il flag la route
   // non può scegliere, e ha risposto 200 «nessun segnale» a un file:// bloccato.
   ok(r.blocked === true, 'ssrf/retry: il blocco è marcato `blocked` per chi chiama');
-  // Un nome che non risolve rientra nello stesso caso: è l'indirizzo a essere
-  // sbagliato, non il sito a essere giù → 400, non 502. Il caso opposto (host
-  // pubblico che risolve ma non risponde) dipende dalla rete: verificato dal
-  // vivo, non qui, perché in CI senza DNS diventerebbe un test che mente.
-  const dns = await fetchText('http://esempio-che-non-esiste-mai.invalid/', { timeout: 4000, retries: 0 });
-  ok(dns.ok === false && dns.blocked === true, 'ssrf/retry: nome irrisolvibile = colpa dell\'indirizzo');
+  // Un nome inesistente: l'esito dipende dal resolver, non dal codice, e va
+  // asserito di conseguenza. Il resolver dell'hosting di produzione risponde con
+  // un IP pubblico anche a `.invalid` (NXDOMAIN dirottato dal provider): lì il
+  // guard deve lasciar passare — l'IP è pubblico, non c'è nulla da bloccare — e
+  // il caso diventa «il sito non risponde». Con un resolver onesto è invece
+  // l'indirizzo a essere sbagliato, quindi `blocked`. Asserire un solo esito
+  // renderebbe il test una bugia in metà degli ambienti.
+  const nomeFinto = 'esempio-che-non-esiste-mai.invalid';
+  const risolve = await (await import('node:dns/promises')).lookup(nomeFinto).then(() => true, () => false);
+  const dns = await fetchText('http://' + nomeFinto + '/', { timeout: 4000, retries: 0 });
+  ok(dns.ok === false, 'ssrf/retry: nome inesistente = fetch fallita');
+  ok(dns.blocked === (risolve ? undefined : true), `ssrf/retry: blocked coerente col resolver (risolve=${risolve})`);
 }
 
 // ── AI Act: invarianti su TUTTE le combinazioni di risposte ──────────────────
