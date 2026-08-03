@@ -31,7 +31,7 @@ node crawl.js stripe.com [--max 8]  # punteggio di SITO (multi-pagina)
 node batch.js [urls...]             # analisi parallela multi-sito
 node compare.js tuosito.com c1.com c2.com  # confronto competitor (GEO+a11y+perf, primo = riferimento) → beacon-compare.html
 node aiact.js tuosito.ch [--json] [--lang=en]  # segnali di trasparenza AI Act in pagina
-node test.js                        # 338 assert sulle funzioni pure
+node test.js                        # 365 assert sulle funzioni pure
 ```
 
 ## Come funziona l'accessibilità
@@ -90,13 +90,22 @@ src/llmstxt.js     generatore llms.txt
 src/report.js      export GEO Markdown/HTML
 src/guard.js       rate-limit per-IP + verifica Turnstile (inerti senza env)
 weights.json       pesi categorie GEO
-test.js            338 assert (no framework) — girano anche in CI
+test.js            365 assert (no framework) — girano anche in CI
 ```
 
 ## Test & CI
-`node test.js` → 338 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
+`node test.js` → 365 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
 
 Due degli assert non sono casi scelti a mano: generano il **prodotto cartesiano** delle risposte del questionario AI Act (domande non risposte comprese) su due date e due esiti di scansione — ~525.000 combinazioni — e verificano invarianti che devono valere sempre: nessuna eccezione, nessuna chiave i18n non tradotta a schermo, un divieto dichiarato è sempre bloccante, fuori dall'ambito nessun obbligo dell'AI Act resta esigibile (`due` **né** `future`; la nLPD è l'eccezione dichiarata), `inForce` coerente con la data di riferimento, confidenza alta solo con copertura completa. È il check che ha trovato la scadenza `future` sopravvissuta al verdetto *fuori ambito*.
+
+### Errori: sei lingue, e mai testo di Node in risposta
+Le pagine erano tradotte in sei lingue, i messaggi d'errore no: un blocco anti-SSRF usciva come «That address cannot be scanned: IP interno non consentito» — status giusto, frase mezza italiana. Nessun assert sullo status code lo vedeva.
+
+Ora `src/ssrf-guard.js` e `normUrl()` lanciano un errore con un `code` (`ssrf.internalIp`, `url.noDomain`…) e il `detail` che l'ha causato; il `message` resta italiano perché serve ai log e alla CLI. La traduzione avviene nel solo punto che parla con l'utente (`web/app/api/http.js`, condiviso dalle nove route). Il modulo di sicurezza **non** importa il catalogo dei testi di proposito: è il livello più basso, non deve dipendere dalle traduzioni.
+
+Regola dell'impianto: **il testo di un'eccezione imprevista non arriva mai al client.** `errorText()` restituisce stringa vuota per un errore senza `code`, la route risponde con un generico tradotto e il testo vero va in `console.error`. Non è pudore: quei messaggi li scrive Node e nominano l'infrastruttura (`connect ECONNREFUSED 10.0.0.5:443`, path assoluti, host interni). Chi legge non può farne nulla, chi sonda il server sì.
+
+Tre assert sorvegliano il catalogo: ogni chiave `api.*`/`url.*`/`ssrf.*` usata nel codice esiste in it **e** en e i due testi differiscono; nelle altre quattro lingue nessun errore coincide con l'italiano; e gli **insiemi di chiavi** delle sei lingue sono identici (275 ciascuno). Serve perché `msg()` ripiega sull'italiano per qualsiasi chiave mancante: un buco non lancia, restituisce la lingua sbagliata — così il modulo AI Act mostrava testo italiano dentro l'interfaccia tedesca senza che nulla se ne accorgesse.
 
 Gli endpoint sono stati inoltre passati al fuzz (780 casi: tipi sbagliati, JSON malformato, indirizzi impossibili, payload enormi, SSRF su 10 bersagli interni) e la UI a uno smoke Playwright sulle 5 pagine in italiano e inglese. Esito: nessun 500, nessuna fuga di contenuto dagli indirizzi interni, errore leggibile su ogni input non valido.
 

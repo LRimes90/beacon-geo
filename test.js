@@ -19,7 +19,16 @@ import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
 import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
 import { deriveObligations, decideVerdict, assessAiAct, euEvidence, coverage, OBLIGATIONS, QUESTIONS, SHOW_IF } from './src/aiactAssess.js';
 import { QUESTION_TEXT, REQUIRED } from './web/app/aiact/questions.mjs';
+import fs from 'node:fs';
 import { en } from './web/app/translations/en.js';
+import { msg, errorText } from './src/messages/index.js';
+import { it as DIZ_IT } from './src/messages/it.js';
+import { en as DIZ_EN } from './src/messages/en.js';
+import { de as DIZ_DE } from './src/messages/de.js';
+import { fr as DIZ_FR } from './src/messages/fr.js';
+import { es as DIZ_ES } from './src/messages/es.js';
+import { pt as DIZ_PT } from './src/messages/pt.js';
+const DIZ = { it: DIZ_IT, en: DIZ_EN, de: DIZ_DE, fr: DIZ_FR, es: DIZ_ES, pt: DIZ_PT };
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
@@ -802,6 +811,107 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const dns = await fetchText('http://' + nomeFinto + '/', { timeout: 4000, retries: 0 });
   ok(dns.ok === false, 'ssrf/retry: nome inesistente = fetch fallita');
   ok(dns.blocked === (risolve ? undefined : true), `ssrf/retry: blocked coerente col resolver (risolve=${risolve})`);
+
+  // Il motivo del blocco deve poter essere ridetto nella lingua dell'utente:
+  // `error` è italiano per costruzione (log e CLI), quindi accanto viaggia una
+  // chiave i18n. Se il code manca, o se la chiave non esiste nel catalogo, il
+  // messaggio inglese resterebbe mezzo italiano: proprio il difetto trovato in
+  // produzione («That address cannot be scanned: IP interno non consentito»).
+  ok(r.errorCode === 'ssrf.internalIp' && r.errorDetail === '127.0.0.1', `ssrf/i18n: code e detail arrivano a chi chiama (${r.errorCode}/${r.errorDetail})`);
+  const casi = [
+    ['not-a-url', 'ssrf.badUrl'],
+    ['file:///etc/passwd', 'ssrf.scheme'],
+    ['http://127.0.0.1/', 'ssrf.internalIp'],
+    ['http://qualcosa.internal/', 'ssrf.internalHost'],
+  ];
+  for (const [raw, code] of casi) {
+    const e = await assertSafeUrl(raw).then(() => null, (err) => err);
+    ok(e && e.code === code, `ssrf/i18n: ${raw} → code ${code} (${e && e.code})`);
+  }
+  // Ogni code del guard tradotto in italiano E in inglese, con il `{detail}`
+  // sostituito: una chiave mancante ricadrebbe sull'italiano senza farsi notare.
+  const tuttiCode = ['ssrf.badUrl', 'ssrf.scheme', 'ssrf.noHost', 'ssrf.internalIp', 'ssrf.internalHost', 'ssrf.dnsFail', 'ssrf.dnsEmpty', 'ssrf.resolvesInternal', 'ssrf.redirects'];
+  const senzaChiave = tuttiCode.filter((c) => {
+    const it = msg('it', c, { detail: 'X' });
+    const en = msg('en', c, { detail: 'X' });
+    return it === c || en === c || it === en || /\{detail\}/.test(it + en);
+  });
+  ok(senzaChiave.length === 0, `ssrf/i18n: ogni motivo tradotto in it e en (mancanti: ${senzaChiave.join(',') || 'nessuno'})`);
+}
+
+// ── i18n degli errori: catalogo completo e nessun testo di Node all'utente ───
+// Gli assert sullo status code non bastano: un 400 col motivo in italiano dentro
+// una frase inglese passa tutti i controlli di status e resta sbagliato. Qui si
+// verifica il testo, non il codice.
+{
+  const casiUrl = [
+    ['', 'url.missing'],
+    [42, 'url.missing'],
+    ['ftp://esempio.ch/', 'url.scheme'],
+    ['http://', 'url.invalid'],
+    ['intranet', 'url.noDomain'],
+  ];
+  for (const [raw, code] of casiUrl) {
+    let e = null;
+    try { normUrl(raw); } catch (err) { e = err; }
+    ok(e && e.badUrl === true && e.code === code, `url/i18n: ${JSON.stringify(raw)} → code ${code} (${e && e.code})`);
+  }
+
+  // Ogni chiave usata nel codice deve esistere in it E in en, essere diversa fra
+  // le due lingue (una traduzione copiata dall'italiano è una traduzione mancante)
+  // e non lasciare `{detail}` scoperto quando il parametro c'è.
+  const sorgenti = [
+    'src/guard.js', 'src/lib.js', 'src/ssrf-guard.js', 'src/aiact.js',
+    'web/app/api/http.js',
+    ...fs.readdirSync('web/app/api', { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => `web/app/api/${d.name}/route.js`),
+  ];
+  const usate = new Set();
+  for (const f of sorgenti) {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/'((?:api|url|ssrf)\.[a-zA-Z.]+)'/g)) usate.add(m[1]);
+  }
+  ok(usate.size >= 20, `i18n: chiavi di errore trovate nel codice (${usate.size})`);
+  const rotte = [...usate].filter((k) => {
+    const i = msg('it', k, { detail: 'X' });
+    const e = msg('en', k, { detail: 'X' });
+    return i === k || e === k || i === e || /\{detail\}/.test(i + e);
+  });
+  ok(rotte.length === 0, `i18n: ogni chiave di errore tradotta in it e en (rotte: ${rotte.join(',') || 'nessuna'})`);
+
+  // Le sei lingue, non due. `msg()` ripiega sull'italiano quando la chiave manca:
+  // un utente tedesco leggeva «IP interno non consentito» e nessun test se ne
+  // accorgeva, perché una stringa c'era. Si confrontano gli INSIEMI di chiavi.
+  for (const lang of ['de', 'fr', 'es', 'pt']) {
+    const mancanti = [...usate].filter((k) => msg(lang, k, { detail: 'X' }) === msg('it', k, { detail: 'X' }));
+    ok(mancanti.length === 0, `i18n ${lang}: ogni errore tradotto (uguali all'italiano: ${mancanti.join(',') || 'nessuno'})`);
+  }
+
+  // Catalogo completo, non solo gli errori: `msg()` ripiega sull'italiano per
+  // QUALSIASI chiave mancante, quindi il modulo AI Act mostrava testo italiano
+  // dentro l'interfaccia tedesca senza che nulla lanciasse. Si confrontano gli
+  // insiemi di chiavi, non i testi: due lingue possono legittimamente coincidere
+  // su una sigla, non possono avere cataloghi di dimensione diversa.
+  const dizionari = {};
+  for (const lang of ['it', 'en', 'de', 'fr', 'es', 'pt']) {
+    dizionari[lang] = Object.keys(JSON.parse(JSON.stringify(DIZ[lang])));
+  }
+  for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
+    const buchi = dizionari.it.filter((k) => !dizionari[lang].includes(k));
+    ok(buchi.length === 0, `catalogo ${lang}: nessuna chiave mancante rispetto all'italiano (${buchi.length ? buchi.slice(0, 5).join(',') + '…' : 'nessuna'})`);
+  }
+
+  // errorText: col code traduce, senza code NON restituisce il messaggio originale.
+  // È la regola di sicurezza dell'impianto: il testo di Node nomina l'infrastruttura
+  // («connect ECONNREFUSED 10.0.0.5:443», path assoluti) e la risposta HTTP è pubblica.
+  const conCode = errorText('en', { code: 'ssrf.internalIp', detail: '127.0.0.1' });
+  ok(/internal/i.test(conCode) && conCode.includes('127.0.0.1'), `errorText: code tradotto in en (${conCode})`);
+  ok(errorText('it', { code: 'ssrf.internalIp', detail: '127.0.0.1' }) !== conCode, 'errorText: it ed en differiscono');
+  const nudo = new Error('connect ECONNREFUSED 10.0.0.5:443');
+  ok(errorText('en', nudo) === '', 'errorText: eccezione senza code → stringa vuota');
+  ok(!errorText('en', nudo).includes('10.0.0.5'), 'errorText: nessun IP interno nel testo restituito');
+  ok(errorText('it', { code: 'chiave.inesistente' }) === '', 'errorText: code fuori catalogo → stringa vuota');
 }
 
 // ── AI Act: invarianti su TUTTE le combinazioni di risposte ──────────────────

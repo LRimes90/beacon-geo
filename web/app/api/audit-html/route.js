@@ -2,7 +2,7 @@
 // Serve per contenuti non ancora pubblici, ad esempio bozze WordPress lette via REST.
 import { auditHtmlSnapshot } from 'beacon-geo/audit';
 import { guard } from 'beacon-geo/guard';
-import { normalizeLang } from 'beacon-geo/messages';
+import { reqLang, fail, failFromError } from '../http.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -10,23 +10,22 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req) {
   let body;
-  try { body = await req.json(); } catch { return Response.json({ error: 'JSON non valido' }, { status: 400 }); }
-  const { url, html, lang } = body || {};
-  if (!url || typeof url !== 'string') return Response.json({ error: 'URL canonica mancante' }, { status: 400 });
-  if (!html || typeof html !== 'string') return Response.json({ error: 'HTML mancante' }, { status: 400 });
-  if (html.length > 1_000_000) return Response.json({ error: 'HTML troppo grande' }, { status: 413 });
+  try { body = await req.json(); } catch { return fail(reqLang(req), 'api.badJson', 400); }
+  const { url, html } = body || {};
+  const l = reqLang(req, body);
+  if (!url || typeof url !== 'string') return fail(l, 'api.canonicalMissing', 400);
+  if (!html || typeof html !== 'string') return fail(l, 'api.htmlMissing', 400);
+  if (html.length > 1_000_000) return fail(l, 'api.htmlTooBig', 413);
 
   const blocked = await guard(req, body);
   if (blocked) return blocked;
 
   try {
-    const r = await auditHtmlSnapshot(url, html, { lang: normalizeLang(lang) });
+    const r = await auditHtmlSnapshot(url, html, { lang: l });
     const { html: _html, ...rest } = r;
     return Response.json(rest);
   } catch (e) {
-    // Indirizzo scritto male = colpa dell'input: 400 con il messaggio di normUrl,
-    // non un 500 con «TypeError: Invalid URL» addosso all'utente.
-    if (e && e.badUrl) return Response.json({ error: String(e.message) }, { status: 400 });
-    return Response.json({ error: 'Analisi snapshot fallita: ' + String(e).slice(0, 120) }, { status: 500 });
+    // Input sbagliato = 400 col motivo tradotto; imprevisto = 500 generico + log.
+    return failFromError(l, e, 'api/audit-html');
   }
 }

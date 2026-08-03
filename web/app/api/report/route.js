@@ -4,6 +4,7 @@ import { toHtmlSuite, toMarkdownSuite } from 'beacon-geo/suite-report';
 import { renderPdfBuffer } from 'beacon-geo/render';
 import { guard } from 'beacon-geo/guard';
 import { normalizeLang } from 'beacon-geo/messages';
+import { reqLang, fail } from '../http.js';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -11,12 +12,12 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req) {
   let body;
-  try { body = await req.json(); } catch { return Response.json({ error: 'JSON non valido' }, { status: 400 }); }
+  try { body = await req.json(); } catch { return fail(reqLang(req), 'api.badJson', 400); }
   const { suite, format = 'html', lang } = body || {};
   // `host` stringa non è pignoleria: sotto viene usato per il nome del file
   // (.replace) e dai generatori. Con un numero la route usciva in 500 vuoto.
   if (!suite || typeof suite !== 'object' || Array.isArray(suite) || typeof suite.host !== 'string' || !suite.host) {
-    return Response.json({ error: 'Dati scansione mancanti' }, { status: 400 });
+    return fail(reqLang(req, body), 'api.suiteMissing', 400);
   }
   const blocked = await guard(req, body); if (blocked) return blocked;
   const date = new Date().toISOString().slice(0, 10);
@@ -37,7 +38,9 @@ export async function POST(req) {
     const html = toHtmlSuite(suite, { date, lang: L });
     if (format === 'pdf') {
       const r = await renderPdfBuffer(html);
-      if (!r.ok) return Response.json({ error: 'PDF non generato: ' + r.reason }, { status: 500 });
+      // Il motivo tecnico (Playwright assente, timeout del browser) va nei log:
+      // all'utente serve sapere che c'è l'alternativa HTML, non quale libreria manca.
+      if (!r.ok) { console.error('[api/report] PDF:', r.reason); return fail(L, 'api.pdfFailed', 500); }
       return new Response(r.buffer, {
         headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="beacon-${base}.pdf"` },
       });
@@ -46,6 +49,7 @@ export async function POST(req) {
       headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Disposition': `attachment; filename="beacon-${base}.html"` },
     });
   } catch (e) {
-    return Response.json({ error: 'Report non generato: dati della scansione incompleti' }, { status: 400 });
+    console.error('[api/report]', e);
+    return fail(L, 'api.reportIncomplete', 400);
   }
 }

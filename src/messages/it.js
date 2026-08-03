@@ -270,6 +270,44 @@ export const it = {
   'aiact.reason.euUnsure': 'Non ne eri certo: è il caso più frequente per un’attività svizzera che lavora anche con clienti UE',
   'aiact.reason.partialCoverage': 'Questionario compilato in parte ({detail} domande): le domande senza risposta valgono come "no", quindi gli obblighi elencati sono un minimo, non l’elenco completo',
   'aiact.scan.rejected': 'Indirizzo non analizzabile: {detail}',
+  // Motivi del guard anti-SSRF. Duplicano i messaggi di `src/ssrf-guard.js`, e
+  // va bene così: là servono ai log e alla CLI e restano in italiano, qui sono
+  // testo per l'utente e devono esistere in ogni lingua. Il guard resta senza
+  // dipendenze verso questo catalogo.
+  // Errori degli endpoint. Erano stringhe italiane cucite nelle route: chi
+  // usava il sito in inglese riceveva pagine tradotte ed errori in italiano.
+  'api.badJson': 'JSON non valido',
+  // Senza {detail}: il motivo tecnico resta nei log del server, non nella
+  // risposta pubblica (nomina IP e path interni, e all'utente non serve).
+  'api.failed': 'Analisi fallita per un motivo imprevisto. Riprova; se succede di nuovo il problema è dalla nostra parte.',
+  'api.canonicalMissing': 'URL canonica mancante',
+  'api.htmlMissing': 'HTML mancante',
+  'api.htmlTooBig': 'HTML troppo grande',
+  'api.auditMissing': 'Dati audit mancanti',
+  'api.statementIncomplete': "Dichiarazione non generata: i dati dell'audit sono incompleti.",
+  'api.rateLimit': 'Troppe richieste, riprova tra poco.',
+  'api.botCheck': 'Verifica anti-bot non superata.',
+  'api.suiteMissing': 'Dati della scansione mancanti',
+  'api.pdfFailed': 'PDF non generato. Riprova, oppure scarica il report in HTML.',
+  'api.reportIncomplete': 'Report non generato: i dati della scansione sono incompleti.',
+  'api.needUrlOrAnswers': 'Serve un indirizzo del sito o le risposte del questionario',
+  'api.answersInvalid': 'Risposte non valide',
+  'api.unreachable': 'Il sito non ha risposto: non c\'è nulla da cui generare il file. Riprova più tardi.',
+  // Motivi di `normUrl` (indirizzo scritto male: colpa dell'input, non del server).
+  'url.missing': 'Indirizzo del sito mancante',
+  'url.notString': 'Indirizzo del sito non valido',
+  'url.scheme': 'Sono ammessi solo indirizzi http e https',
+  'url.invalid': 'Indirizzo del sito non valido: {detail}',
+  'url.noDomain': 'Indirizzo senza nome di dominio: {detail}',
+  'ssrf.badUrl': 'non è un indirizzo valido',
+  'ssrf.scheme': 'sono ammessi solo indirizzi http e https (ricevuto {detail})',
+  'ssrf.noHost': 'manca il nome del sito',
+  'ssrf.internalIp': '{detail} è un indirizzo di rete interna, non un sito pubblico',
+  'ssrf.internalHost': '{detail} è un nome di rete interna, non un sito pubblico',
+  'ssrf.dnsFail': 'il nome {detail} non esiste o non è risolvibile',
+  'ssrf.dnsEmpty': 'il nome {detail} non ha alcun indirizzo associato',
+  'ssrf.resolvesInternal': '{detail} punta a una rete interna, non a un sito pubblico',
+  'ssrf.redirects': 'troppi reindirizzamenti in fila',
   'aiact.scan.unreachable': 'Il sito non ha risposto: nessun segnale è stato controllato. Riprova, oppure compila il questionario — funziona anche senza scansione.',
 
   // Obblighi

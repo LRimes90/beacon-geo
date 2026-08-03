@@ -7,8 +7,19 @@
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 
+// Oltre al messaggio, l'errore porta un `code` e il `detail` che lo ha causato
+// (host, IP, schema). Il messaggio serve ai log e alla CLI e resta in italiano;
+// il code serve a chi parla con l'utente, che lo traduce nella sua lingua —
+// senza, un utente inglese leggerebbe «That address cannot be scanned: IP
+// interno non consentito». Il guard NON importa l'i18n di proposito: è il
+// modulo di sicurezza più basso, non deve dipendere da un catalogo di testi.
 export class SsrfError extends Error {
-  constructor(msg) { super(msg); this.name = 'SsrfError'; }
+  constructor(msg, code, detail) {
+    super(msg);
+    this.name = 'SsrfError';
+    this.code = code;
+    if (detail !== undefined) this.detail = String(detail);
+  }
 }
 
 const MAX_BYTES = 3_000_000; // ~3 MB: oltre, la risorsa non ci serve (evita OOM)
@@ -56,29 +67,29 @@ export function isBlockedIp(ip) {
 // Ritorna l'URL parsato o lancia SsrfError.
 export async function assertSafeUrl(raw) {
   let u;
-  try { u = new URL(raw); } catch { throw new SsrfError('URL non valido'); }
+  try { u = new URL(raw); } catch { throw new SsrfError('URL non valido', 'ssrf.badUrl'); }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-    throw new SsrfError('Schema non consentito: ' + u.protocol);
+    throw new SsrfError('Schema non consentito: ' + u.protocol, 'ssrf.scheme', u.protocol);
   }
   const host = u.hostname;
-  if (!host) throw new SsrfError('Host mancante');
+  if (!host) throw new SsrfError('Host mancante', 'ssrf.noHost');
 
   if (net.isIP(host)) {
-    if (isBlockedIp(host)) throw new SsrfError('IP interno non consentito: ' + host);
+    if (isBlockedIp(host)) throw new SsrfError('IP interno non consentito: ' + host, 'ssrf.internalIp', host);
     return u;
   }
   // Nomi interni per convenzione
   if (/^(localhost|localhost\.localdomain)$/i.test(host) ||
       /\.(localhost|local|internal|intranet|lan|home)$/i.test(host)) {
-    throw new SsrfError('Host interno non consentito: ' + host);
+    throw new SsrfError('Host interno non consentito: ' + host, 'ssrf.internalHost', host);
   }
   let addrs;
   try { addrs = await lookup(host, { all: true }); }
-  catch { throw new SsrfError('DNS irrisolvibile: ' + host); }
-  if (!addrs.length) throw new SsrfError('DNS senza risultati: ' + host);
+  catch { throw new SsrfError('DNS irrisolvibile: ' + host, 'ssrf.dnsFail', host); }
+  if (!addrs.length) throw new SsrfError('DNS senza risultati: ' + host, 'ssrf.dnsEmpty', host);
   for (const a of addrs) {
     if (isBlockedIp(a.address)) {
-      throw new SsrfError('Host risolve a IP interno: ' + host + ' → ' + a.address);
+      throw new SsrfError('Host risolve a IP interno: ' + host + ' → ' + a.address, 'ssrf.resolvesInternal', host + ' → ' + a.address);
     }
   }
   return u;
@@ -99,7 +110,7 @@ export async function safeFetch(url, { maxRedirects = 5, ...init } = {}) {
     }
     return { res, finalUrl: current };
   }
-  throw new SsrfError('Troppi redirect');
+  throw new SsrfError('Troppi redirect', 'ssrf.redirects');
 }
 
 // Legge il body con un TETTO sui byte (evita che una risorsa enorme esaurisca la RAM).

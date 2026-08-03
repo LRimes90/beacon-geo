@@ -22,13 +22,21 @@ export const LIVE_UA = ['GPTBot', 'ClaudeBot', 'PerplexityBot', 'Googlebot', 'CC
 // scritto male è colpa dell'input, non del server, e deve dare 400 con un
 // messaggio leggibile. `badUrl` è il flag che le route usano per distinguerlo.
 export function normUrl(raw) {
-  const fail = (msg) => { const e = new Error(msg); e.badUrl = true; throw e; };
+  // Come SsrfError: il messaggio resta in italiano (CLI e log), il `code` serve
+  // alle route per ridirlo nella lingua dell'utente.
+  const fail = (msg, code, detail) => {
+    const e = new Error(msg);
+    e.badUrl = true;
+    e.code = code;
+    if (detail !== undefined) e.detail = detail;
+    throw e;
+  };
   // typeof prima di tutto: il body è JSON, un numero o un oggetto arrivano qui
   // senza sforzo. Con `String(42)` diventava `https://42/` — un host che nessun
   // DNS risolve, quindi un errore di rete al posto di un errore di input.
-  if (typeof raw !== 'string') fail('Indirizzo del sito mancante');
+  if (typeof raw !== 'string') fail('Indirizzo del sito mancante', 'url.missing');
   const typed = raw.trim();
-  if (!typed) fail('Indirizzo del sito mancante');
+  if (!typed) fail('Indirizzo del sito mancante', 'url.missing');
   // Lo schema va riconosciuto PRIMA di aggiungere `https://`: senza questo,
   // `file:///etc/passwd` diventava `https://file:///etc/passwd` e veniva
   // respinto con «senza nome di dominio» — vero ma incomprensibile.
@@ -36,17 +44,17 @@ export function normUrl(raw) {
   // `esempio.ch:8080` non è lo schema «esempio.ch», è un indirizzo legittimo.
   const m = /^([a-z][a-z0-9+.-]*):(\/\/)?(\d*)/i.exec(typed);
   const isScheme = m && !m[1].includes('.') && (m[2] || !m[3]);
-  if (isScheme && !/^https?$/i.test(m[1])) fail('Sono ammessi solo indirizzi http e https');
+  if (isScheme && !/^https?$/i.test(m[1])) fail('Sono ammessi solo indirizzi http e https', 'url.scheme');
   let u;
   try { u = new URL(/^https?:\/\//i.test(typed) ? typed : 'https://' + typed); }
-  catch { fail('Indirizzo del sito non valido: ' + typed.slice(0, 80)); }
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') fail('Sono ammessi solo indirizzi http e https');
-  if (!u.hostname) fail('Indirizzo senza nome di dominio: ' + typed.slice(0, 80));
+  catch { fail('Indirizzo del sito non valido: ' + typed.slice(0, 80), 'url.invalid', typed.slice(0, 80)); }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') fail('Sono ammessi solo indirizzi http e https', 'url.scheme');
+  if (!u.hostname) fail('Indirizzo senza nome di dominio: ' + typed.slice(0, 80), 'url.noDomain', typed.slice(0, 80));
   // Un host senza punto non è un sito pubblico: `42`, `localhost`, `intranet`.
   // Gli IP letterali (v4 puntati, v6 fra parentesi) e i nomi interni li ferma
   // già il guard SSRF; qui si scarta prima ciò che non è nemmeno un dominio.
   if (!u.hostname.includes('.') && !u.hostname.startsWith('[')) {
-    fail('Indirizzo senza nome di dominio: ' + typed.slice(0, 80));
+    fail('Indirizzo senza nome di dominio: ' + typed.slice(0, 80), 'url.noDomain', typed.slice(0, 80));
   }
   return u.href;
 }
@@ -70,7 +78,15 @@ export async function fetchText(url, { ua = BROWSER_UA, timeout = 15000, retries
       // il backoff inutile portava l'audit oltre i 20s (tetto in produzione: 30).
       // `blocked` distingue «indirizzo rifiutato» (colpa di ciò che è stato
       // scritto) da «sito che non risponde»: chi chiama sceglie 400 o 424.
-      if (e && e.name === 'SsrfError') { last.blocked = true; break; }
+      // `code`/`detail` viaggiano insieme a `blocked`: il messaggio in `error` è
+      // italiano (serve ai log e alla CLI), il code permette a chi risponde
+      // all'utente di tradurre il motivo nella lingua richiesta.
+      if (e && e.name === 'SsrfError') {
+        last.blocked = true;
+        last.errorCode = e.code;
+        last.errorDetail = e.detail;
+        break;
+      }
       if (attempt < retries) await new Promise((r) => setTimeout(r, 600 * (attempt + 1))); // backoff
     }
   }
