@@ -200,6 +200,7 @@ export const it = {
   'report.pagesShort': '{n} pagina/e',
   'report.md.footer': 'Report generato da Beacon 🔦 — GEO / AI-readiness checker.',
   'report.html.footer': 'Generato da Beacon 🔦 — GEO / AI-readiness checker.',
+  'report.profile': 'Profilo pesi: {profile} — i pesi delle categorie sono pubblici e documentati in weights.json',
 
   // ---- report combinato (src/suiteReport.js) ----
   'suite.eyebrow': 'Report completo — GEO · Accessibilità · Performance',

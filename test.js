@@ -15,6 +15,7 @@ import { renderHtml } from './src/render.js';
 import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
 import { auditHtmlSnapshot } from './audit.js';
+import WEIGHTS, { PROFILE } from './weights.mjs';
 import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
 import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
 import { deriveObligations, decideVerdict, assessAiAct, euEvidence, coverage, OBLIGATIONS, QUESTIONS, SHOW_IF } from './src/aiactAssess.js';
@@ -44,6 +45,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const r = parseRobots('User-agent: *\nDisallow: /private\n');
   ok(r.isAllowed('GPTBot', '/') === true, 'home ammessa con disallow parziale');
   ok(r.isAllowed('GPTBot', '/private/x') === false, 'path bloccato rispettato');
+}
+
+// weights.mjs — profilo EVIDENCE-2026: i pesi sono una dichiarazione pubblica, non un dettaglio interno
+{
+  const somma = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
+  ok(Math.abs(somma - 1) < 1e-9, 'pesi: la somma fa esattamente 1.00 (avuta ' + somma + ')');
+  ok(PROFILE === 'EVIDENCE-2026', 'pesi: il profilo si chiama EVIDENCE-2026: ' + PROFILE);
+  ok(WEIGHTS.answerability === 0.25, 'pesi: answerability 0.25 (la categoria piu pesante)');
+  ok(WEIGHTS.agentFiles === 0.05, 'pesi: agentFiles declassata a 0.05');
+  ok(WEIGHTS.answerability > WEIGHTS.structured, 'pesi: answerability pesa piu di structured (evidenza Ahrefs sullo schema)');
+  ok(Object.keys(WEIGHTS).length === 6, 'pesi: sei categorie pesate');
 }
 
 // HTML helpers

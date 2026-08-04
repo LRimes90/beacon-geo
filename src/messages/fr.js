@@ -178,6 +178,7 @@ export const fr = {
   'report.pagesShort': '{n} page(s)',
   'report.md.footer': 'Rapport généré par Beacon 🔦 — checker GEO / AI-readiness.',
   'report.html.footer': 'Généré par Beacon 🔦 — checker GEO / AI-readiness.',
+  'report.profile': 'Profil de pondération : {profile} — les poids des catégories sont publics et documentés dans weights.json',
   'suite.eyebrow': 'Rapport complet — GEO · Accessibilité · Performance',
   'suite.md.title': 'Rapport complet — {host}',
   'suite.unavailable': 'Non disponible :',

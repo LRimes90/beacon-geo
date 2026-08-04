@@ -81,7 +81,7 @@ export async function crawlSite(rawUrl, { max = 6, renderJs = false, lang = 'it'
   }
 
   const weights = WEIGHTS; // modulo JS: sopravvive al bundling (no ENOENT in prod)
-  return { url: home.url, host: home.host, pagesAnalyzed: 1 + pageResults.length, home, pageResults, aggregate: aggregate(home, pageResults, weights) };
+  return { url: home.url, host: home.host, pagesAnalyzed: 1 + pageResults.length, profile: home.profile, home, pageResults, aggregate: aggregate(home, pageResults, weights) };
 }
 
 // ---- CLI ----

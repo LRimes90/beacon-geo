@@ -12,7 +12,7 @@ import { makeT, normalizeLang } from './src/messages/index.js';
 import { generateLlmsTxt } from './src/llmstxt.js';
 import { renderHtml, htmlToPdf } from './src/render.js';
 import { toMarkdown, toHtml } from './src/report.js';
-import WEIGHTS from './weights.mjs';
+import WEIGHTS, { PROFILE } from './weights.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -105,7 +105,7 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   else if (noindex) notice = { type: 'noindex', msg: t('notice.noindex') };
   else if (words < 60 && !renderJs) notice = { type: 'maybe-spa', msg: t('notice.maybeSpa') };
 
-  return { url, host, lang: L, fetchedOk: page.ok, overall, categories: results, rights, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
+  return { url, host, lang: L, profile: PROFILE, fetchedOk: page.ok, overall, categories: results, rights, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
 }
 
 export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
@@ -173,6 +173,7 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
     url,
     host,
     lang: L,
+    profile: PROFILE,
     fetchedOk: true,
     snapshot: true,
     overall,
@@ -237,7 +238,7 @@ const dot = { good: '●', warn: '▲', crit: '✕', info: '·' };
 function printReport(r) {
   console.log(`\n${C.bold}Beacon · ${r.host}${C.reset}  ${C.dim}${r.url}${C.reset}`);
   console.log(`${C.bold}Punteggio: ${r.overall}/100${C.reset}  (${verdict(r.overall)})`);
-  console.log(`${C.dim}rendering JS: ${r.render.ok ? 'attivo (post-render)' : 'no-JS — ' + r.render.reason}${C.reset}\n`);
+  console.log(`${C.dim}profilo pesi: ${r.profile} · rendering JS: ${r.render.ok ? 'attivo (post-render)' : 'no-JS — ' + r.render.reason}${C.reset}\n`);
   for (const [k, label] of Object.entries(CATEGORY_LABELS)) {
     const cat = r.categories[k];
     const bar = '█'.repeat(Math.round(cat.score / 5)).padEnd(20, '░');

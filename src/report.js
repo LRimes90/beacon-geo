@@ -16,10 +16,10 @@ export function normalize(r, lang = 'it') {
   if (r.aggregate) {
     // risultato di crawlSite: categorie già numeriche, fix dalla home
     const fixes = collectFixes(r.home, lang);
-    return { host: r.host, url: r.url, kind: 'sito', pages: r.pagesAnalyzed, overall: r.aggregate.overall, scores: r.aggregate.categories, fixes };
+    return { host: r.host, url: r.url, kind: 'sito', pages: r.pagesAnalyzed, overall: r.aggregate.overall, scores: r.aggregate.categories, profile: r.profile || r.home?.profile || null, fixes };
   }
   const scores = Object.fromEntries(Object.keys(CATEGORY_LABELS).map((k) => [k, r.categories[k].score]));
-  return { host: r.host, url: r.url, kind: 'pagina', pages: 1, overall: r.overall, scores, fixes: collectFixes(r, lang) };
+  return { host: r.host, url: r.url, kind: 'pagina', pages: 1, overall: r.overall, scores, profile: r.profile || null, fixes: collectFixes(r, lang) };
 }
 function collectFixes(auditLike, lang = 'it') {
   const out = [];
@@ -45,6 +45,7 @@ export function toMarkdown(r, { date = '', lang = 'it' } = {}) {
     md += `\n## ${t('report.actions')}\n\n`;
     for (const f of d.fixes.slice(0, 10)) md += `- **${f.cat}** — ${f.fix}\n`;
   }
+  if (d.profile) md += `\n*${t('report.profile', { profile: d.profile })}*\n`;
   md += `\n---\n*${t('report.md.footer')}*\n`;
   return md;
 }
@@ -87,6 +88,6 @@ export function toHtml(r, { date = '', lang = 'it' } = {}) {
   <div class="meta">${d.url} · ${t('report.pagesShort', { n: d.pages })}${date ? ' · ' + date : ''}</div>
   <table>${rows}</table>
   ${fixes}
-  <footer>${t('report.html.footer')}</footer>
+  <footer>${d.profile ? t('report.profile', { profile: d.profile }) + ' · ' : ''}${t('report.html.footer')}</footer>
 </body></html>`;
 }

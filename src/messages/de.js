@@ -178,6 +178,7 @@ export const de = {
   'report.pagesShort': '{n} Seite(n)',
   'report.md.footer': 'Report generiert von Beacon 🔦 — GEO / KI-Readiness-Checker.',
   'report.html.footer': 'Generiert von Beacon 🔦 — GEO / KI-Readiness-Checker.',
+  'report.profile': 'Gewichtungsprofil: {profile} — die Kategoriegewichte sind öffentlich und in weights.json dokumentiert',
   'suite.eyebrow': 'Vollständiger Report — GEO · Barrierefreiheit · Performance',
   'suite.md.title': 'Vollständiger Report — {host}',
   'suite.unavailable': 'Nicht verfügbar:',
