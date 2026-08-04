@@ -415,6 +415,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // degrado: perf non disponibile (chiave PSI mancante) → non deve rompere
   const partial = toHtmlSuite({ url: 'https://y.com/', host: 'y.com', geo: { ...suite.geo, host: 'y.com' }, a11y: suite.a11y, perf: { ok: false, reason: 'quota' } }, {});
   ok(partial.includes('chiave PSI mancante'), 'suite html: performance assente degrada con nota');
+
+  // fix round 2: gemello di normalize() usato da suiteReport.js — un suite.geo con
+  // cinque categorie (client vecchio, come nel finding 4 di report.js) non deve
+  // stampare "null" ne' colorare di rosso una categoria mai misurata.
+  const fiveCatGeo = { host: 'z.com', url: 'https://z.com/', overall: 50, categories: {
+    access: { score: 100, checks: [] }, agentFiles: { score: 60, checks: [] }, structured: { score: 80, checks: [] },
+    readability: { score: 50, checks: [] }, offsite: { score: 100, checks: [] },
+  } };
+  const suite5 = { ...suite, geo: fiveCatGeo };
+  const html5 = toHtmlSuite(suite5, {});
+  ok(!html5.includes('>null<') && !html5.includes('null%'), 'suite html: categoria assente non stampa "null"');
+  const md5 = toMarkdownSuite(suite5, {});
+  ok(md5.includes('Risposta pronta per le AI: —'), 'suite md: categoria assente mostra un trattino, non "undefined/100"');
 }
 
 // history.js — snapshot + diff (before-after, pure)

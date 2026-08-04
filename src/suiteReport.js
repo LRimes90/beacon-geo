@@ -20,6 +20,8 @@ function geoSection(geo, lang) {
   const d = normalize(geo, lang);
   const rows = Object.entries(categoryLabels(lang)).map(([k, label]) => {
     const s = d.scores[k];
+    // null = categoria non misurata: stesso trattamento di report.js, niente colore/barra su un numero inesistente.
+    if (s == null) return `<tr><td>${label}</td><td class="n">—</td><td><div class="bar"></div></td></tr>`;
     return `<tr><td>${label}</td><td class="n" style="color:${col(s)}">${s}</td><td><div class="bar"><i style="width:${s}%;background:${col(s)}"></i></div></td></tr>`;
   }).join('');
   return `<h2>GEO / AI-readiness — ${d.overall}/100 <span class="v">${verdict(d.overall, lang)}</span></h2><table>${rows}</table>`;
@@ -130,7 +132,8 @@ export function toMarkdownSuite(suite, { date = '', brand = 'Beacon', lang = 'it
   if (suite.geo && !suite.geo.error) {
     const d = normalize(suite.geo, lang);
     L.push(`## GEO / AI-readiness — ${d.overall}/100 (${verdict(d.overall, lang)})`, '');
-    for (const [k, label] of Object.entries(categoryLabels(lang))) L.push(`- ${label}: ${d.scores[k]}/100`);
+    // null = categoria non misurata: trattino, nessun punteggio inventato.
+    for (const [k, label] of Object.entries(categoryLabels(lang))) L.push(d.scores[k] == null ? `- ${label}: —` : `- ${label}: ${d.scores[k]}/100`);
   } else L.push('## GEO / AI-readiness', `${t('suite.unavailable')} ${suite.geo && suite.geo.error}`);
   L.push('');
   // a11y
