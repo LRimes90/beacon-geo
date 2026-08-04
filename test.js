@@ -2,7 +2,7 @@
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
 import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
-import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
+import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
 import { summarizePsi } from './src/perf.js';
@@ -357,6 +357,61 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const bad = analyzeTech({ https: false, noindex: true, viewport: false, statusOk: false });
   ok(bad.score === 0, 'tech: tutto problematico = 0');
   ok(bad.checks.find((c) => c.name.startsWith('Indicizz')).status === 'crit', 'tech: noindex è critico');
+}
+{
+  // agentReady — informativa per scelta: nessuna evidenza che questi segnali correlino
+  // con le citazioni, e pesarli perché sono moderni ripeterebbe l'errore di llms.txt.
+  const vuoto = analyzeAgentReady({
+    contentUsage: { source: null, raw: null },
+    botAuth: { browserOk: true, aiOk: 5, aiTotal: 5 },
+    webmcp: { rendered: false, api: null },
+    conventions: { skillMd: false, mcpJson: false, agentSkills: false },
+  });
+  ok(vuoto.informational === true, 'agentReady: informativa, non pesata');
+  ok(vuoto.checks.length === 4, 'agentReady: quattro check (avuti ' + vuoto.checks.length + ')');
+  ok(vuoto.checks.every((c) => c.status !== 'crit'), 'agentReady: nessun check critico — sono standard nascenti, non difetti');
+
+  const pieno = analyzeAgentReady({
+    contentUsage: { source: 'header', raw: 'train-ai=n, search=y' },
+    botAuth: { browserOk: true, aiOk: 5, aiTotal: 5 },
+    webmcp: { rendered: true, api: 'document.modelContext' },
+    conventions: { skillMd: true, mcpJson: true, agentSkills: true },
+  });
+  ok(pieno.score > vuoto.score, 'agentReady: dichiarare gli standard alza il punteggio informativo');
+  ok(pieno.checks.some((c) => c.detail.includes('train-ai=n')), 'agentReady: il valore AIPREF dichiarato viene mostrato');
+
+  // Web Bot Auth: Beacon NON può verificare la config del WAF dall'esterno e lo dice.
+  const filtrato = analyzeAgentReady({
+    contentUsage: { source: null, raw: null },
+    botAuth: { browserOk: true, aiOk: 1, aiTotal: 5 },
+    webmcp: { rendered: false, api: null },
+    conventions: { skillMd: false, mcpJson: false, agentSkills: false },
+  });
+  const ba = filtrato.checks.find((c) => c.name.includes('Web Bot Auth'));
+  ok(ba && ba.status === 'warn', 'agentReady: divergenza browser/AI segnalata come filtro per user-agent');
+  ok(ba.detail.includes('non può verificare') || ba.limit, 'agentReady: il limite di misura è dichiarato, non nascosto');
+
+  // Nessun rendering JS: WebMCP non è valutabile e non deve risultare "assente".
+  const senzaRender = analyzeAgentReady({
+    contentUsage: { source: null, raw: null },
+    botAuth: { browserOk: true, aiOk: 5, aiTotal: 5 },
+    webmcp: { rendered: false, api: null },
+    conventions: { skillMd: false, mcpJson: false, agentSkills: false },
+  });
+  const mcp = senzaRender.checks.find((c) => c.name.includes('WebMCP'));
+  ok(mcp.status === 'info' && /rendering/i.test(mcp.detail), 'agentReady: senza rendering JS WebMCP è "non valutabile", non "assente"');
+}
+{
+  // parseContentUsage: header o robots.txt, entrambi validi per AIPREF.
+  ok(parseContentUsage(null, 'User-agent: *\nContent-Usage: train-ai=n\n').source === 'robots', 'AIPREF: regola nel robots.txt riconosciuta');
+  ok(parseContentUsage('train-ai=n, search=y', '').source === 'header', 'AIPREF: header HTTP ha precedenza');
+  ok(parseContentUsage(null, 'User-agent: *\nDisallow:\n').source === null, 'AIPREF: nessuna dichiarazione → null');
+}
+{
+  // detectWebmcp: rilevazione testuale sull'HTML renderizzato.
+  ok(detectWebmcp('<script>document.modelContext.registerTool({})</script>') === 'document.modelContext', 'WebMCP: API corrente rilevata');
+  ok(detectWebmcp('<script>navigator.modelContext.registerTool({})</script>') === 'navigator.modelContext', 'WebMCP: API deprecata rilevata');
+  ok(detectWebmcp('<p>parliamo di modelContext in un articolo</p>') === null, 'WebMCP: la parola nel testo non è una registrazione');
 }
 
 // a11y.js — modulo accessibilità (companion): check statici deterministici.

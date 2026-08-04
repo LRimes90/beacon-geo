@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { fetchText, head, parseRobots, normUrl, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
-import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeAnswerability, analyzeOffsite, analyzeRights, analyzeTech, CATEGORY_LABELS } from './src/analyzers.js';
+import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeAnswerability, analyzeOffsite, analyzeRights, analyzeTech, analyzeAgentReady, parseContentUsage, detectWebmcp, CATEGORY_LABELS } from './src/analyzers.js';
 import { makeT, normalizeLang } from './src/messages/index.js';
 import { generateLlmsTxt } from './src/llmstxt.js';
 import { renderHtml, htmlToPdf } from './src/render.js';
@@ -68,6 +68,18 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   ]);
   const renderedHtml = render.ok ? render.html : null;
 
+  // standard d'avanguardia (informativi): AIPREF, Web Bot Auth (diagnostico), WebMCP
+  const agentReady = analyzeAgentReady({
+    contentUsage: parseContentUsage(page.headers?.get?.('content-usage'), robotsTxt),
+    botAuth: {
+      browserOk: page.ok,
+      aiOk: Object.values(liveFetch).filter((r) => r.ok).length,
+      aiTotal: Object.keys(liveFetch).length,
+    },
+    webmcp: { rendered: !!renderedHtml, api: detectWebmcp(renderedHtml || html) },
+    conventions: { skillMd: files.skillMd, mcpJson: files.mcpJson, agentSkills: files.agentSkills },
+  }, L);
+
   // 6) analizzatori (funzioni pure)
   const results = {
     access: analyzeAccess({ robotsAllowed, liveFetch }, L),
@@ -108,7 +120,7 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   else if (noindex) notice = { type: 'noindex', msg: t('notice.noindex') };
   else if (words < 60 && !renderJs) notice = { type: 'maybe-spa', msg: t('notice.maybeSpa') };
 
-  return { url, host, lang: L, profile: PROFILE, fetchedOk: page.ok, overall, categories: results, rights, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
+  return { url, host, lang: L, profile: PROFILE, fetchedOk: page.ok, overall, categories: results, rights, agentReady, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
 }
 
 export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
@@ -141,6 +153,15 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
     tdmrep: tdmrep.ok,
     license: /<link[^>]+rel=["\']license["\']/i.test(html),
     contentSignal: /content-signal/i.test(robotsTxt),
+  }, L);
+
+  // Su snapshot non ci sono header HTTP né fetch live reali: AIPREF si legge solo
+  // dal robots.txt e Web Bot Auth non è diagnosticabile (liveFetch è simulato).
+  const agentReady = analyzeAgentReady({
+    contentUsage: parseContentUsage(null, robotsTxt),
+    botAuth: { browserOk: true, aiOk: LIVE_UA.length, aiTotal: LIVE_UA.length },
+    webmcp: { rendered: false, api: detectWebmcp(html) },
+    conventions: { skillMd: files.skillMd, mcpJson: files.mcpJson, agentSkills: files.agentSkills },
   }, L);
 
   const inCommonCrawl = await commonCrawl(host);
@@ -183,6 +204,7 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
     overall,
     categories: results,
     rights,
+    agentReady,
     tech,
     files,
     html,
@@ -252,6 +274,12 @@ function printReport(r) {
       console.log(`  ${col}${dot[c.status]}${C.reset} ${c.name} ${C.dim}— ${c.detail}${C.reset}`);
       if (c.fix) console.log(`     ${C.dim}↳ ${c.fix}${C.reset}`);
     }
+    console.log('');
+  }
+  for (const [label, cat] of [['Standard d\'avanguardia', r.agentReady], ['Segnali e diritti AI', r.rights], ['Fondamentali tecnici', r.tech]]) {
+    if (!cat) continue;
+    console.log(`${C.dim}${label} — informativo, non incide sul punteggio${C.reset}`);
+    for (const c of cat.checks) console.log(`  ${C[c.status] || ''}${dot[c.status]}${C.reset} ${c.name} ${C.dim}— ${c.detail}${C.reset}`);
     console.log('');
   }
 }

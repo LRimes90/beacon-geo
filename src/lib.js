@@ -69,7 +69,9 @@ export async function fetchText(url, { ua = BROWSER_UA, timeout = 15000, retries
       const { res, finalUrl } = await safeFetch(url, { headers: { 'User-Agent': ua, Accept: 'text/html,application/xhtml+xml,*/*' }, signal: ctrl.signal });
       const body = await readCapped(res);
       clearTimeout(timer);
-      return { ok: res.ok, status: res.status, body, finalUrl };
+      // `headers` è l'oggetto Headers nativo: serve ad AIPREF (Content-Usage) e non
+      // finisce nel JSON del report (Headers non è serializzabile).
+      return { ok: res.ok, status: res.status, body, finalUrl, headers: res.headers };
     } catch (e) {
       clearTimeout(timer);
       last = { ok: false, status: 0, body: '', error: String((e && e.message) || e) };

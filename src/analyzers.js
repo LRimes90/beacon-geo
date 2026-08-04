@@ -358,6 +358,73 @@ export function analyzeRights({ tdmrep, license, contentSignal }, lang = 'it') {
 }
 export const RIGHTS_LABEL = 'Segnali e diritti AI';
 
+// ⑦ STANDARD D'AVANGUARDIA PER GLI AGENTI — informativo (NON pesato).
+// Informativo per scelta, non per prudenza: non esiste evidenza che questi segnali
+// correlino con le citazioni. Pesarli perché sono moderni ripeterebbe esattamente
+// l'errore di llms.txt (Ahrefs, 137.210 domini: il 97% dei file mai letto).
+
+// AIPREF (IETF AI Preferences WG): la preferenza può stare nell'header HTTP
+// Content-Usage o in una regola omonima del robots.txt. L'header ha precedenza.
+export function parseContentUsage(headerValue, robotsTxt) {
+  const h = headerValue && String(headerValue).trim();
+  if (h) return { source: 'header', raw: h };
+  const m = String(robotsTxt || '').match(/^\s*content-usage\s*:\s*(.+)$/im);
+  if (m) return { source: 'robots', raw: m[1].trim() };
+  return { source: null, raw: null };
+}
+
+// WebMCP (W3C Draft Community Group Report): si cerca la REGISTRAZIONE di un tool,
+// non la parola. `document.modelContext` è l'API corrente; `navigator.modelContext`
+// è deprecata da Chrome 150 e va segnalata come tale.
+// ponytail: rilevazione testuale sull'HTML renderizzato — non eseguiamo l'API.
+export function detectWebmcp(html) {
+  const s = String(html || '');
+  if (/document\s*\.\s*modelContext/.test(s)) return 'document.modelContext';
+  if (/navigator\s*\.\s*modelContext/.test(s)) return 'navigator.modelContext';
+  return null;
+}
+
+export function analyzeAgentReady({ contentUsage, botAuth, webmcp, conventions }, lang = 'it') {
+  const t = makeT(lang);
+  const usage = contentUsage || { source: null, raw: null };
+  const ba = botAuth || { browserOk: false, aiOk: 0, aiTotal: 0 };
+  const mcp = webmcp || { rendered: false, api: null };
+  const conv = conventions || {};
+  const convHave = ['skillMd', 'mcpJson', 'agentSkills'].filter((k) => conv[k]).length;
+
+  // Il sito filtra per user-agent se il browser passa e qualche UA AI no.
+  const filtered = ba.browserOk && ba.aiTotal > 0 && ba.aiOk < ba.aiTotal;
+
+  const checks = [
+    { name: t('agentReady.usage.name'), status: usage.source ? 'good' : 'info',
+      detail: usage.source ? t('agentReady.usage.detail.ok', { source: usage.source, raw: usage.raw }) : t('agentReady.usage.detail.none'),
+      fix: usage.source ? null : t('agentReady.usage.fix') },
+    { name: t('agentReady.botauth.name'), status: filtered ? 'warn' : 'info',
+      // Beacon non può verificare dall'esterno se l'edge verifica le firme: è il bot
+      // che firma, non il sito, e inviare un Signature-Agent senza firma valida
+      // sarebbe spoofing, non una misura. Il check è diagnostico e lo dichiara.
+      detail: (filtered
+        ? t('agentReady.botauth.detail.filtered', { aiOk: ba.aiOk, aiTotal: ba.aiTotal })
+        : t('agentReady.botauth.detail.uniform')) + ' — ' + t('agentReady.botauth.limit'),
+      limit: true,
+      fix: filtered ? t('agentReady.botauth.fix') : null },
+    { name: t('agentReady.webmcp.name'),
+      status: mcp.api ? 'good' : 'info',
+      detail: mcp.api
+        ? t('agentReady.webmcp.detail.ok', { api: mcp.api }) + (mcp.api === 'navigator.modelContext' ? ' — ' + t('agentReady.webmcp.deprecated') : '')
+        : (mcp.rendered ? t('agentReady.webmcp.detail.none') : t('agentReady.webmcp.detail.norender')),
+      fix: mcp.api || !mcp.rendered ? null : t('agentReady.webmcp.fix') },
+    { name: t('agentReady.conventions.name'), status: convHave ? 'good' : 'info',
+      detail: t('agentReady.conventions.detail', { have: convHave }),
+      fix: convHave === 0 ? t('agentReady.conventions.fix') : null },
+  ];
+
+  // Punteggio informativo: quota di segnali dichiarati. Non entra nell'overall.
+  const declared = (usage.source ? 1 : 0) + (mcp.api ? 1 : 0) + (convHave ? 1 : 0) + (filtered ? 0 : 1);
+  return { informational: true, score: clamp(pct(declared, 4)), checks };
+}
+export const AGENT_READY_LABEL = 'Standard d\'avanguardia per gli agenti';
+
 // ⑦ FONDAMENTALI TECNICI — informativo ma con allarmi forti (noindex/HTTPS bloccano la visibilità).
 export function analyzeTech({ https, noindex, viewport, statusOk }, lang = 'it') {
   const t = makeT(lang);
