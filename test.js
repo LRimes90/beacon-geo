@@ -541,6 +541,12 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // Tutte le pagine non misurate: la categoria esce dal denominatore, non vale 0.
   const soloBrevi = aggregate({ url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 100 }, structured: { score: 100 }, readability: { score: 100 }, offsite: { score: 100 }, answerability: { score: 0, unmeasured: true } } }, [], w);
   ok(soloBrevi.overall === 100, 'answerability tutta non misurata esce dalla media (atteso 100, avuto ' + soloBrevi.overall + ')');
+
+  // fix round 1: un modulo site-level unmeasured (es. offsite quando Common Crawl e' giu)
+  // deve uscire dalla media come null, non entrare a punteggio pieno (allineato ad audit.js).
+  const offsiteGiu = aggregate({ url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 100 }, structured: { score: 100 }, readability: { score: 100 }, answerability: { score: 100 }, offsite: { score: 60, unmeasured: true } } }, [], w);
+  ok(offsiteGiu.categories.offsite === null, 'offsite unmeasured esce come null, non 60: ' + offsiteGiu.categories.offsite);
+  ok(offsiteGiu.overall === 100, 'offsite unmeasured esclusa dal peso (atteso 100, avuto ' + offsiteGiu.overall + ')');
 }
 
 // audit.js — answerability è fra le categorie pesate e il profilo viaggia nel risultato
@@ -569,6 +575,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // aggregato (crawl): normalize gestisce anche r.aggregate
   const crawlLike = { host: 'y.com', url: 'https://y.com/', pagesAnalyzed: 3, aggregate: { overall: 65, categories: { access: 80, agentFiles: 40, structured: 70, readability: 60, offsite: 100 } }, home: { categories: {} } };
   ok(normalize(crawlLike).kind === 'sito' && normalize(crawlLike).overall === 65, 'normalize: risultato crawl (sito)');
+
+  // fix round 1: payload con una categoria mancante (client con stato vecchio, pre-answerability)
+  // non deve lanciare - la chiave assente diventa null, come una categoria non misurata.
+  const fiveCats = { host: 'z.com', url: 'https://z.com/', overall: 50, categories: {
+    access: { score: 100, checks: [] }, agentFiles: { score: 60, checks: [] }, structured: { score: 80, checks: [] },
+    readability: { score: 50, checks: [] }, offsite: { score: 100, checks: [] },
+  } };
+  const nm5 = normalize(fiveCats);
+  ok(nm5.scores.answerability === null, 'normalize: categoria assente diventa null, non lancia: ' + nm5.scores.answerability);
+  const md5 = toMarkdown(fiveCats);
+  ok(md5.includes('| — | —'), 'markdown: categoria non misurata mostra un trattino, non "undefined/100"');
+  const html5 = toHtml(fiveCats);
+  ok(!html5.includes('undefined'), 'html: categoria non misurata non stampa "undefined"');
 }
 
 // llmstxt.js — brand & raggruppamento (funzioni pure)

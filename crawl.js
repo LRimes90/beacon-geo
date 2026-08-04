@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // crawl.js — analisi multi-pagina con punteggio aggregato di SITO.
 // Uso:  node crawl.js <url> [--js] [--max N] [--json]
-// Site-level (access, agentFiles, offsite) calcolate una volta; page-level (structured, readability) mediate.
+// Site-level (access, agentFiles, offsite) calcolate una volta; page-level (structured, readability, answerability) mediate.
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { fetchText } from './src/lib.js';
@@ -50,13 +50,17 @@ export function aggregate(homeAudit, pageResults, weights) {
     ...(homeAudit.categories.answerability?.unmeasured ? [] : [homeAudit.categories.answerability?.score]),
     ...pageResults.map((p) => p.answerability),
   ].filter((n) => typeof n === 'number');
+  // site-level: se homeAudit la marca unmeasured (es. offsite quando Common Crawl
+  // non risponde) esce dalla media qui come in audit.js — altrimenti il punteggio
+  // di sito e quello della singola pagina divergerebbero per lo stesso sito.
+  const siteScore = (k) => (homeAudit.categories[k].unmeasured ? null : homeAudit.categories[k].score);
   const cats = {
-    access: homeAudit.categories.access.score,       // site-level
-    agentFiles: homeAudit.categories.agentFiles.score, // site-level
-    structured,                                        // page-level (media)
-    readability,                                       // page-level (media)
+    access: siteScore('access'),           // site-level, null se unmeasured
+    agentFiles: siteScore('agentFiles'),   // site-level, null se unmeasured
+    structured,                             // page-level (media)
+    readability,                            // page-level (media)
     answerability: ansScores.length ? avg(ansScores) : null, // page-level, null = non misurata
-    offsite: homeAudit.categories.offsite.score,       // site-level
+    offsite: siteScore('offsite'),         // site-level, null se unmeasured
   };
   let total = 0, wsum = 0;
   for (const k of Object.keys(CATEGORY_LABELS)) {
@@ -120,8 +124,9 @@ if (isMain) {
     console.log(`${C.bold}Punteggio di sito: ${r.aggregate.overall}/100${C.reset}  (${verdict(r.aggregate.overall)})\n`);
     for (const [k, label] of Object.entries(CATEGORY_LABELS)) {
       const s = r.aggregate.categories[k];
-      const lvl = ['structured', 'readability'].includes(k) ? ' (media pagine)' : ' (sito)';
-      console.log(`  ${label.padEnd(28)} ${String(s).padStart(3)}/100${C.dim}${lvl}${C.reset}`);
+      const lvl = ['structured', 'readability', 'answerability'].includes(k) ? ' (media pagine)' : ' (sito)';
+      const val = s == null ? '  — (non misurata)' : `${String(s).padStart(3)}/100`;
+      console.log(`  ${label.padEnd(28)} ${val}${C.dim}${lvl}${C.reset}`);
     }
     console.log(`\n${C.dim}Pagine analizzate:${C.reset}`);
     console.log(`  ${C.dim}${'—'.padEnd(2)} ${r.url} (home) → SEO ${r.home.categories.structured.score}, Legg ${r.home.categories.readability.score}${C.reset}`);

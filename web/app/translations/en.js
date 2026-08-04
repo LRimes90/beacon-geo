@@ -13,7 +13,7 @@ export const en = {
   "Azioni consigliate": "Recommended actions",
   "Bozza dichiarazione di accessibilità": "Draft accessibility statement",
   "Buono": "Good",
-  "Cinque categorie fanno il punteggio; le ultime due sono controlli informativi. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.": "Five categories make up the score; the last two are informational checks. Everything is measured on the served HTML — without trusting only what the site claims.",
+  "Sei categorie fanno il punteggio; le ultime due sono controlli informativi. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.": "Six categories make up the score; the last two are informational checks. Everything is measured on the served HTML — without trusting only what the site claims.",
   "Codice su GitHub": "Code on GitHub",
   "Come correggere": "How to fix",
   "Controlla →": "Check →",

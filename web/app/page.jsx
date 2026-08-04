@@ -6,7 +6,7 @@ import { useLang, Rich } from './i18n';
 
 const LABELS = {
   access: 'Accesso AI', agentFiles: 'File per agenti e AI', structured: 'Dati strutturati e SEO',
-  readability: 'Leggibilità per le macchine', offsite: 'Visibilità off-site',
+  readability: 'Leggibilità per le macchine', answerability: 'Risposta pronta per le AI', offsite: 'Visibilità off-site',
 };
 const color = (s) => (s >= 80 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : s >= 40 ? 'var(--mid)' : 'var(--crit)');
 const verdict = (s) => (s >= 80 ? 'Buono' : s >= 60 ? 'Discreto' : s >= 40 ? 'Da migliorare' : 'Critico');
@@ -174,7 +174,7 @@ export default function Home() {
 
         <section className="features" id="controlli">
           <div className="kicker">{t('Cosa controlliamo')}</div>
-          <p className="fintro">{t("Cinque categorie fanno il punteggio; le ultime due sono controlli informativi. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.")}</p>
+          <p className="fintro">{t("Sei categorie fanno il punteggio; le ultime due sono controlli informativi. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.")}</p>
           <div className="speclist">
             {FEATURES.map((f) => (
               <div className={'specrow' + (f.info ? ' info' : '')} key={f.t}>
