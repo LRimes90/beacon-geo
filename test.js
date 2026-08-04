@@ -2,7 +2,7 @@
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
 import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
-import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, isQuestionHeading, pageLang } from './src/analyzers.js';
+import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
 import { summarizePsi } from './src/perf.js';
@@ -399,7 +399,8 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     url: 'https://x.com/', host: 'x.com',
     geo: { host: 'x.com', url: 'https://x.com/', overall: 72, categories: {
       access: { score: 100, checks: [] }, agentFiles: { score: 60, checks: [{ fix: 'aggiungi llms.txt' }] },
-      structured: { score: 80, checks: [] }, readability: { score: 50, checks: [] }, offsite: { score: 100, checks: [] },
+      structured: { score: 80, checks: [] }, readability: { score: 50, checks: [] }, answerability: { score: 70, checks: [] },
+      offsite: { score: 100, checks: [] },
     } },
     a11y: { result: { score: 67, checks: [{ name: 'Lingua della pagina (lang)', status: 'crit', detail: 'manca', fix: 'aggiungi lang' }] },
       axe: { ok: true, counts: { violations: 1, passes: 5, incomplete: 0 }, findings: [{ id: 'image-alt', status: 'crit', impact: 'critical', help: 'Le immagini devono avere alt', helpUrl: 'https://x', nodes: 3, failureSummary: 'Fix: add alt', remedy: { why: 'perché', before: '<img src="a">', after: '<img src="a" alt="x">' } }] } },
@@ -524,16 +525,28 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(pl.length === 2, 'link: dedup + solo interni (attesi 2, avuti ' + pl.length + ')');
 }
 
-// crawl.js — aggregazione: site-level dalla home, page-level mediate
+// crawl.js — aggregazione: site-level dalla home, page-level mediate; answerability è
+// page-level e può essere unmeasured su singole pagine (esce dalla media, non vale 0)
 {
-  const home = { url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 60 }, structured: { score: 80 }, readability: { score: 40 }, offsite: { score: 100 } } };
-  const pages = [{ structured: 60, readability: 80 }, { structured: 40, readability: 60 }];
-  const w = { access: 0.25, agentFiles: 0.15, structured: 0.20, readability: 0.25, offsite: 0.15 };
+  const home = { url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 60 }, structured: { score: 80 }, readability: { score: 40 }, offsite: { score: 100 }, answerability: { score: 50 } } };
+  const pages = [{ structured: 60, readability: 80, answerability: 70 }, { structured: 40, readability: 60, answerability: null }];
+  const w = { access: 0.18, agentFiles: 0.05, structured: 0.15, readability: 0.22, offsite: 0.15, answerability: 0.25 };
   const a = aggregate(home, pages, w);
   ok(a.categories.access === 100, 'access resta site-level (home)');
   ok(a.categories.structured === 60, 'structured = media(80,60,40)=60: ' + a.categories.structured);
   ok(a.categories.readability === 60, 'readability = media(40,80,60)=60: ' + a.categories.readability);
-  ok(a.overall > 0 && a.overall <= 100, 'overall di sito nel range: ' + a.overall);
+  ok(a.categories.answerability === 60, 'answerability = media(50,70) ignorando la pagina non misurata: ' + a.categories.answerability);
+  ok(a.overall > 0 && a.overall <= 100, 'overall di sito nel range con sei categorie: ' + a.overall);
+
+  // Tutte le pagine non misurate: la categoria esce dal denominatore, non vale 0.
+  const soloBrevi = aggregate({ url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 100 }, structured: { score: 100 }, readability: { score: 100 }, offsite: { score: 100 }, answerability: { score: 0, unmeasured: true } } }, [], w);
+  ok(soloBrevi.overall === 100, 'answerability tutta non misurata esce dalla media (atteso 100, avuto ' + soloBrevi.overall + ')');
+}
+
+// audit.js — answerability è fra le categorie pesate e il profilo viaggia nel risultato
+{
+  ok(Object.keys(CATEGORY_LABELS).includes('answerability'), 'audit: answerability è fra le categorie pesate');
+  ok(Object.keys(CATEGORY_LABELS).length === 6, 'audit: sei categorie pesate (avute ' + Object.keys(CATEGORY_LABELS).length + ')');
 }
 
 // report.js — export MD/HTML (funzioni pure)
@@ -543,6 +556,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     agentFiles: { score: 60, checks: [{ fix: 'aggiungi llms.txt' }] },
     structured: { score: 80, checks: [] },
     readability: { score: 50, checks: [] },
+    answerability: { score: 70, checks: [] },
     offsite: { score: 100, checks: [] },
   } };
   const nm = normalize(fake);

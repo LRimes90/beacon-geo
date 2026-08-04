@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { fetchText, head, parseRobots, normUrl, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
-import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeOffsite, analyzeRights, analyzeTech, CATEGORY_LABELS } from './src/analyzers.js';
+import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeAnswerability, analyzeOffsite, analyzeRights, analyzeTech, CATEGORY_LABELS } from './src/analyzers.js';
 import { makeT, normalizeLang } from './src/messages/index.js';
 import { generateLlmsTxt } from './src/llmstxt.js';
 import { renderHtml, htmlToPdf } from './src/render.js';
@@ -74,6 +74,9 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
     agentFiles: analyzeAgentFiles(files, L),
     structured: analyzeStructured(html, L),
     readability: analyzeReadability({ served: html, rendered: renderedHtml }, L),
+    // Sul post-render se disponibile: una SPA senza JS non ha contenuto da giudicare
+    // e la categoria si dichiarerebbe unmeasured per un motivo sbagliato.
+    answerability: analyzeAnswerability({ served: renderedHtml || html, host }, L),
     offsite: analyzeOffsite({ ccbotAllowed: robotsAllowed['CCBot'], inCommonCrawl }, L),
   };
 
@@ -146,6 +149,7 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
     agentFiles: analyzeAgentFiles(files, L),
     structured: analyzeStructured(html, L),
     readability: analyzeReadability({ served: html, rendered: null }, L),
+    answerability: analyzeAnswerability({ served: html, host }, L),
     offsite: analyzeOffsite({ ccbotAllowed: robotsAllowed['CCBot'], inCommonCrawl }, L),
   };
 

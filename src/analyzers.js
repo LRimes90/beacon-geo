@@ -331,7 +331,7 @@ export function categoryLabels(lang = 'it') {
   const t = makeT(lang);
   return {
     access: t('category.access'), agentFiles: t('category.agentFiles'), structured: t('category.structured'),
-    readability: t('category.readability'), offsite: t('category.offsite'),
+    readability: t('category.readability'), answerability: t('category.answerability'), offsite: t('category.offsite'),
   };
 }
 export const CATEGORY_LABELS = categoryLabels('it');

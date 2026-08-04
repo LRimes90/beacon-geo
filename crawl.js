@@ -5,7 +5,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { fetchText } from './src/lib.js';
-import { analyzeStructured, analyzeReadability, CATEGORY_LABELS } from './src/analyzers.js';
+import { analyzeStructured, analyzeReadability, analyzeAnswerability, CATEGORY_LABELS } from './src/analyzers.js';
 import { renderHtml } from './src/render.js';
 import { audit } from './audit.js';
 import WEIGHTS from './weights.mjs';
@@ -43,16 +43,28 @@ export function aggregate(homeAudit, pageResults, weights) {
   const avg = (a) => (a.length ? Math.round(a.reduce((x, y) => x + y, 0) / a.length) : 0);
   const structured = avg([homeAudit.categories.structured.score, ...pageResults.map((p) => p.structured)]);
   const readability = avg([homeAudit.categories.readability.score, ...pageResults.map((p) => p.readability)]);
+  // answerability: media SOLO sulle pagine misurate. Una pagina contatti che si
+  // dichiara unmeasured non deve abbassare il voto del sito, e se nessuna pagina
+  // è misurabile la categoria esce dal denominatore (come in audit.js).
+  const ansScores = [
+    ...(homeAudit.categories.answerability?.unmeasured ? [] : [homeAudit.categories.answerability?.score]),
+    ...pageResults.map((p) => p.answerability),
+  ].filter((n) => typeof n === 'number');
   const cats = {
     access: homeAudit.categories.access.score,       // site-level
     agentFiles: homeAudit.categories.agentFiles.score, // site-level
     structured,                                        // page-level (media)
     readability,                                       // page-level (media)
+    answerability: ansScores.length ? avg(ansScores) : null, // page-level, null = non misurata
     offsite: homeAudit.categories.offsite.score,       // site-level
   };
   let total = 0, wsum = 0;
-  for (const k of Object.keys(CATEGORY_LABELS)) { total += cats[k] * weights[k]; wsum += weights[k]; }
-  return { overall: Math.round(total / wsum), categories: cats };
+  for (const k of Object.keys(CATEGORY_LABELS)) {
+    if (cats[k] === null) continue;
+    total += cats[k] * weights[k];
+    wsum += weights[k];
+  }
+  return { overall: wsum ? Math.round(total / wsum) : 0, categories: cats };
 }
 
 // ---- orchestratore ----
@@ -77,7 +89,13 @@ export async function crawlSite(rawUrl, { max = 6, renderJs = false, lang = 'it'
     if (!res.ok || res.body.length < 300) continue;
     let rendered = null;
     if (renderJs) { const r = await renderHtml(u); rendered = r.ok ? r.html : null; }
-    pageResults.push({ url: u, structured: analyzeStructured(res.body, lang).score, readability: analyzeReadability({ served: res.body, rendered }, lang).score });
+    const ans = analyzeAnswerability({ served: rendered || res.body, host: new URL(u).host }, lang);
+    pageResults.push({
+      url: u,
+      structured: analyzeStructured(res.body, lang).score,
+      readability: analyzeReadability({ served: res.body, rendered }, lang).score,
+      answerability: ans.unmeasured ? null : ans.score,
+    });
   }
 
   const weights = WEIGHTS; // modulo JS: sopravvive al bundling (no ENOENT in prod)
