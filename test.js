@@ -2,7 +2,7 @@
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
 import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence } from './src/lib.js';
-import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech } from './src/analyzers.js';
+import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, isQuestionHeading, pageLang } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
 import { summarizePsi } from './src/perf.js';
@@ -158,6 +158,58 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(htmlLang('<html lang="de-CH"><body></body></html>') === 'de', 'lingua: <html lang="de-CH"> → de');
   ok(htmlLang('<html><body></body></html>') === null, 'lingua: senza attributo → null');
   ok(stripTags('<p>uno <b>due</b>&nbsp;tre</p>').trim() === 'uno due tre', 'stripTags: tag via, entità collassata');
+}
+
+// answerability: la pagina che non è contenuto non va penalizzata, va esclusa.
+{
+  const breve = '<html lang="it"><body><main><h1>Contatti</h1><p>Scrivici a info@esempio.it oppure chiamaci in orario di ufficio.</p></main></body></html>';
+  const a = analyzeAnswerability({ served: breve, host: 'esempio.it' });
+  ok(a.unmeasured === true, 'answerability: sotto le 300 parole la categoria esce dal punteggio');
+  ok(a.checks.length === 1 && a.checks[0].status === 'info', 'answerability: unmeasured spiega perché, senza fix inventati');
+}
+{
+  // Pagina ben strutturata: risposta breve dopo ogni heading, liste, paragrafi corti, dati.
+  const buona = '<html lang="it"><body><main><h1>Guida</h1>'
+    + '<h2>Che cos\'è il GEO?</h2><p>È la disciplina che rende un sito citabile dai motori generativi.</p>'
+    + '<p>' + 'parola '.repeat(60) + '</p>'
+    + '<h2>Quanto conta il robots.txt?</h2><p>Conta meno di quanto si creda, secondo i dati.</p>'
+    + '<p>Nel 2026 il 95% delle pagine citate bloccava GPTBot, su 4.000.000 di citazioni analizzate.</p>'
+    + '<ul><li>Verifica il testo servito senza JavaScript</li><li>Controlla la sitemap dichiarata</li><li>Misura le liste e le tabelle della pagina</li></ul>'
+    + '<blockquote>Correlazione non è causalità.</blockquote>'
+    + '<p>Fonte: <a href="https://ahrefs.com/blog/">Ahrefs</a>. ' + 'parola '.repeat(200) + '</p>'
+    + '</main></body></html>';
+  const a = analyzeAnswerability({ served: buona, host: 'esempio.it' });
+  ok(!a.unmeasured, 'answerability: pagina oltre le 300 parole viene misurata');
+  ok(a.score >= 70, 'answerability: pagina ben strutturata prende un voto alto: ' + a.score);
+  ok(a.checks.length === 5, 'answerability: cinque check (avuti ' + a.checks.length + ')');
+  ok(a.checks.filter((c) => c.status === 'good').length >= 4, 'answerability: almeno quattro check verdi');
+}
+{
+  // Muro di testo: 800 parole in un solo paragrafo, nessuna lista, nessun heading.
+  const muro = '<html lang="it"><body><main><h1>Servizi</h1><p>' + 'parola '.repeat(800) + '</p></main></body></html>';
+  const a = analyzeAnswerability({ served: muro, host: 'esempio.it' });
+  ok(a.score < 40, 'answerability: muro di testo bocciato: ' + a.score);
+  ok(a.checks.some((c) => c.status === 'crit'), 'answerability: almeno un check critico sul muro di testo');
+  ok(a.checks.every((c) => c.status !== 'crit' || c.fix), 'answerability: ogni check critico porta un fix azionabile');
+}
+{
+  // Titoli-domanda: la lingua è quella della PAGINA, non quella del report.
+  ok(isQuestionHeading('Wie funktioniert das?', 'de'), 'domanda: punto interrogativo riconosciuto in qualsiasi lingua');
+  ok(isQuestionHeading('Warum Beacon', 'de'), 'domanda: parola interrogativa tedesca senza punto');
+  ok(isQuestionHeading('O que é GEO', 'pt'), 'domanda: bigramma portoghese "o que"');
+  ok(!isQuestionHeading('O nosso metodo', 'pt'), 'domanda: articolo iniziale non è una domanda (falso positivo di "o")');
+  ok(isQuestionHeading('Come funziona', 'it'), 'domanda: parola interrogativa italiana');
+  ok(!isQuestionHeading('Comunicazione e stampa', 'it'), 'domanda: "Comunicazione" non è "come" (match su parola intera)');
+
+  const de = '<html lang="de"><body><main><h2>Wie funktioniert Beacon?</h2><p>Kurz gesagt: es misst.</p><p>' + 'wort '.repeat(400) + '</p></main></body></html>';
+  const a = analyzeAnswerability({ served: de, host: 'esempio.de' }, 'it');
+  const q = a.checks.find((c) => c.name.toLowerCase().includes('domanda'));
+  ok(q && q.status === 'good', 'answerability: heading tedesco valutato in tedesco anche con report in italiano');
+}
+{
+  ok(pageLang('<html lang="fr"><body></body></html>') === 'fr', 'pageLang: attributo lang rispettato');
+  ok(pageLang('<html><body><p>Il sito è una vetrina che non ha dichiarato la lingua nel markup</p></body></html>') === 'it', 'pageLang: fallback euristico sulle stopword italiane');
+  ok(pageLang('<html><body><p>The site does not declare its language in the markup and that is the case here</p></body></html>') === 'en', 'pageLang: fallback euristico sulle stopword inglesi');
 }
 
 // contentHtml/bodyHtml — quello che sembra un tag ma non è nel DOM non va contato

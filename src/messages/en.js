@@ -6,6 +6,7 @@ export const en = {
   'category.agentFiles': 'Files for agents and AI',
   'category.structured': 'Structured data and SEO',
   'category.readability': 'Machine readability',
+  'category.answerability': 'Risposta pronta per le AI',
   'category.offsite': 'Off-site visibility',
   'category.rights': 'AI signals and rights',
   'category.tech': 'Technical fundamentals',
@@ -67,6 +68,25 @@ export const en = {
   'readability.jsdelta.name': 'JavaScript delta (no-JS vs render)',
   'readability.jsdelta.detail': '+{gain} words after rendering (served {served} → rendered {rendered})',
   'readability.jsdelta.fix': "A lot of content is injected via JS: bots that don't run JS won't see it. Consider SSR.",
+
+  // ---- answerability (placeholder IT — Task 9 traduce) ----
+  'answerability.direct.name': 'Risposta diretta dopo il titolo',
+  'answerability.direct.detail': 'prima frase dopo H2/H3: {median} parole (mediana su {sections} sezioni)',
+  'answerability.direct.fix': 'Apri ogni sezione con una frase di risposta sotto le 30 parole, poi sviluppa',
+  'answerability.blocks.name': 'Blocchi estraibili (liste, tabelle)',
+  'answerability.blocks.detail': '{blocks} blocchi su {words} parole ({lists} liste, {tables} tabelle)',
+  'answerability.blocks.fix': 'Trasforma le enumerazioni in liste e i confronti in tabelle con intestazioni',
+  'answerability.paras.name': 'Paragrafi digeribili',
+  'answerability.paras.detail': '{long}/{total} paragrafi oltre le 120 parole',
+  'answerability.paras.fix': 'Spezza i paragrafi lunghi: un concetto per paragrafo, sotto le 120 parole',
+  'answerability.questions.name': 'Titoli in forma di domanda',
+  'answerability.questions.detail': '{have}/{total} titoli H2-H3 in forma di domanda (lingua della pagina: {lang})',
+  'answerability.questions.fix': 'Riformula i titoli come le domande che le persone digitano davvero',
+  'answerability.evidence.name': 'Evidenza citabile',
+  'answerability.evidence.detail': '{count} elementi: {numbers} dati, {quotes} citazioni, {links} link a fonti',
+  'answerability.evidence.fix': 'Aggiungi dati con unità di misura, citazioni e link alle fonti',
+  'answerability.unmeasured.name': 'Contenuto insufficiente per la misura',
+  'answerability.unmeasured.detail': '{words} parole: sotto le 300 questa categoria esce dal punteggio invece di penalizzare la pagina',
 
   // ---- ⑤ Visibilità off-site ----
   'offsite.ccbot.name': 'CCBot access (Common Crawl)',
