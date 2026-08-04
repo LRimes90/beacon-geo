@@ -4,7 +4,7 @@
 // status: 'good' | 'warn' | 'crit' | 'info'
 // i18n: ogni analyzer accetta `lang` (default 'it') e legge le stringhe dal
 // catalogo src/messages/ — la logica di punteggio resta identica.
-import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links, sections, extractableBlocks, paragraphWords, citableEvidence, htmlLang, stripTags } from './lib.js';
+import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links, sections, extractableBlocks, paragraphWords, citableEvidence, htmlLang, stripTags, contentWords } from './lib.js';
 import { makeT } from './messages/index.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
@@ -195,11 +195,21 @@ export function pageLang(html, fallback = 'it') {
   return bestScore >= 3 && best ? best : fallback;
 }
 
+// Titoli di menu comunissimi ("Chi siamo", "Quem somos") che iniziano come una parola
+// interrogativa ma sono un titolo in terza persona plurale, non una domanda — falso
+// positivo trovato in review 1 su una pagina aziendale reale. Frasi intere, non parole:
+// "Come raggiungerci" resta escluso ma "Come funziona" (vera domanda) resta riconosciuto.
+const NON_QUESTION_HEADINGS = {
+  it: ['chi siamo', 'dove siamo', 'come raggiungerci'],
+  pt: ['quem somos'],
+};
+
 // Un titolo è in forma di domanda se finisce con "?" o se inizia con una parola
 // interrogativa della lingua della pagina, confrontata su parola intera.
 export function isQuestionHeading(text, lang = 'it') {
   const s = String(text || '').trim().toLowerCase();
   if (!s) return false;
+  if ((NON_QUESTION_HEADINGS[lang] || []).includes(s)) return false;
   if (s.endsWith('?')) return true;
   const words = QUESTION_WORDS[lang] || QUESTION_WORDS.it;
   return words.some((w) => s === w || s.startsWith(w + ' ') || s.startsWith(w + '\''));
@@ -209,7 +219,9 @@ const MIN_WORDS_ANSWERABILITY = 300;
 
 export function analyzeAnswerability({ served, host }, lang = 'it') {
   const t = makeT(lang);
-  const words = wordCount(served || '');
+  // contentWords, non wordCount: il gate delle 300 e il denominatore /500 devono
+  // girare sul contenuto reale, non su menu/testata/footer (review 1, finding critico).
+  const words = contentWords(served || '');
 
   // Sotto le 300 parole non c'è contenuto da giudicare: home vetrina, listing,
   // pagina contatti. `unmeasured` esce dalla media pesata (vedi audit.js) — stesso
@@ -231,8 +243,13 @@ export function analyzeAnswerability({ served, host }, lang = 'it') {
 
   // ① risposta diretta dopo l'heading (25). Mediana e non media: una sola sezione
   // con un cappello lungo non deve affossare una pagina per il resto pulita.
+  // Con un numero pari di sezioni la mediana è la media dei due valori centrali
+  // (review 1: l'indice singolo dava il valore superiore, non la mediana vera).
   const lens = secs.map((s) => s.firstSentenceWords).filter((n) => n > 0).sort((a, b) => a - b);
-  const median = lens.length ? lens[Math.floor(lens.length / 2)] : null;
+  const mid = lens.length / 2;
+  const median = lens.length === 0 ? null
+    : lens.length % 2 === 1 ? lens[Math.floor(mid)]
+    : Math.round((lens[mid - 1] + lens[mid]) / 2);
   const directPts = median === null ? 12 : median <= 30 ? 25 : median <= 50 ? 14 : 4;
   const directStatus = median === null ? 'info' : median <= 30 ? 'good' : median <= 50 ? 'warn' : 'crit';
 

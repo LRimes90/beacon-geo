@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence } from './src/lib.js';
+import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, isQuestionHeading, pageLang } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
@@ -168,7 +168,12 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(a.checks.length === 1 && a.checks[0].status === 'info', 'answerability: unmeasured spiega perché, senza fix inventati');
 }
 {
-  // Pagina ben strutturata: risposta breve dopo ogni heading, liste, paragrafi corti, dati.
+  // Pagina IDEALE: risposta breve dopo ogni heading, liste, paragrafi corti, dati -
+  // tutti e cinque i controlli in "good". Il paragrafo lungo della versione precedente
+  // (200 ripetizioni in un solo <p>) faceva scattare il crit sui paragrafi nonostante
+  // gli altri assert restassero verdi (>= 70 e >= 4 buoni non inchiodavano i pesi
+  // esatti) - round di review 1, finding 6. Diviso in piu paragrafi corti: ora
+  // score === 100 inchioda la somma dei pesi (25+20+20+15+20).
   const buona = '<html lang="it"><body><main><h1>Guida</h1>'
     + '<h2>Che cos\'è il GEO?</h2><p>È la disciplina che rende un sito citabile dai motori generativi.</p>'
     + '<p>' + 'parola '.repeat(60) + '</p>'
@@ -176,13 +181,15 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     + '<p>Nel 2026 il 95% delle pagine citate bloccava GPTBot, su 4.000.000 di citazioni analizzate.</p>'
     + '<ul><li>Verifica il testo servito senza JavaScript</li><li>Controlla la sitemap dichiarata</li><li>Misura le liste e le tabelle della pagina</li></ul>'
     + '<blockquote>Correlazione non è causalità.</blockquote>'
-    + '<p>Fonte: <a href="https://ahrefs.com/blog/">Ahrefs</a>. ' + 'parola '.repeat(200) + '</p>'
+    + '<p>Fonte: <a href="https://ahrefs.com/blog/">Ahrefs</a>. ' + 'parola '.repeat(60) + '</p>'
+    + '<p>' + 'parola '.repeat(60) + '</p>'
+    + '<p>' + 'parola '.repeat(60) + '</p>'
     + '</main></body></html>';
   const a = analyzeAnswerability({ served: buona, host: 'esempio.it' });
   ok(!a.unmeasured, 'answerability: pagina oltre le 300 parole viene misurata');
-  ok(a.score >= 70, 'answerability: pagina ben strutturata prende un voto alto: ' + a.score);
   ok(a.checks.length === 5, 'answerability: cinque check (avuti ' + a.checks.length + ')');
-  ok(a.checks.filter((c) => c.status === 'good').length >= 4, 'answerability: almeno quattro check verdi');
+  ok(a.checks.every((c) => c.status === 'good'), 'answerability: pagina ideale, tutti i controlli good: ' + a.checks.map((c) => c.status));
+  ok(a.score === 100, 'answerability: pagina ideale inchioda la somma dei pesi a 100 (avuto ' + a.score + ')');
 }
 {
   // Muro di testo: 800 parole in un solo paragrafo, nessuna lista, nessun heading.
@@ -200,11 +207,64 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(!isQuestionHeading('O nosso metodo', 'pt'), 'domanda: articolo iniziale non è una domanda (falso positivo di "o")');
   ok(isQuestionHeading('Come funziona', 'it'), 'domanda: parola interrogativa italiana');
   ok(!isQuestionHeading('Comunicazione e stampa', 'it'), 'domanda: "Comunicazione" non è "come" (match su parola intera)');
+  // titoli di menu, non domande: falso positivo su pagina aziendale reale (review 1, finding 3)
+  ok(!isQuestionHeading('Chi siamo', 'it'), 'domanda: "Chi siamo" e un titolo di menu, non una domanda');
+  ok(!isQuestionHeading('Dove siamo', 'it'), 'domanda: "Dove siamo" e un titolo di menu, non una domanda');
+  ok(!isQuestionHeading('Come raggiungerci', 'it'), 'domanda: "Come raggiungerci" e un titolo di menu, non una domanda');
+  ok(!isQuestionHeading('Quem somos', 'pt'), 'domanda: "Quem somos" (pt) e un titolo di menu, non una domanda');
 
   const de = '<html lang="de"><body><main><h2>Wie funktioniert Beacon?</h2><p>Kurz gesagt: es misst.</p><p>' + 'wort '.repeat(400) + '</p></main></body></html>';
   const a = analyzeAnswerability({ served: de, host: 'esempio.de' }, 'it');
   const q = a.checks.find((c) => c.name.toLowerCase().includes('domanda'));
   ok(q && q.status === 'good', 'answerability: heading tedesco valutato in tedesco anche con report in italiano');
+}
+{
+  // review 1, finding critico: il gate delle 300 parole deve girare sul contenuto
+  // reale (contentWords), non sulla pagina intera (wordCount) - altrimenti un chrome
+  // pesante (menu, testata, footer) puo far passare il gate una pagina di contatti.
+  const contatti = '<html lang="it"><body>'
+    + '<header><p>' + 'avviso '.repeat(200) + '</p></header>'
+    + '<nav><ul>'
+    + '<li><a href="/">Pagina iniziale del sito</a></li><li><a href="/chi-siamo">Chi siamo e la nostra storia</a></li>'
+    + '<li><a href="/servizi">Tutti i nostri servizi disponibili</a></li><li><a href="/blog">Blog e approfondimenti tematici</a></li>'
+    + '<li><a href="/eventi">Calendario degli eventi in programma</a></li><li><a href="/news">Ultime notizie e comunicati</a></li>'
+    + '<li><a href="/faq">Domande frequenti e risposte utili</a></li><li><a href="/team">Il nostro team di collaboratori</a></li>'
+    + '<li><a href="/partner">I partner che sostengono il progetto</a></li><li><a href="/sostegno">Come sostenere le nostre attivita</a></li>'
+    + '<li><a href="/dona">Fai una donazione libera oggi</a></li><li><a href="/volontari">Diventa volontario con noi</a></li>'
+    + '<li><a href="/press">Rassegna stampa e comunicati ufficiali</a></li><li><a href="/contatti">Contatti e informazioni utili</a></li>'
+    + '</ul></nav>'
+    + '<main><h1>Contatti</h1><p>Scrivici a info@esempio.it oppure chiamaci in orario di ufficio per qualsiasi informazione sui nostri servizi e sulle nostre attivita sul territorio.</p></main>'
+    + '<footer><p>Indirizzo: Via Esempio numero 1, 6500 Bellinzona, Canton Ticino, Svizzera. Orari di apertura: dal lunedi al venerdi dalle 9 alle 18, sabato su appuntamento. Registro di commercio numero CH-123.456.789. Dal 2015 siamo al servizio della regione, con sedi anche a Lugano e a Locarno per meglio servire la clientela in tutto il territorio del Cantone.</p></footer>'
+    + '</body></html>';
+  ok(wordCount(contatti) >= 300, 'answerability: pagina di controllo, wordCount pagina intera (col chrome) supera 300 (avuto ' + wordCount(contatti) + ')');
+  ok(contentWords(contatti) < 300, 'lib: contentWords esclude il chrome e resta sotto 300 (avuto ' + contentWords(contatti) + ')');
+  const a = analyzeAnswerability({ served: contatti, host: 'esempio.it' });
+  ok(a.unmeasured === true, 'answerability: senza contentWords il gate delle 300 sarebbe stato aggirato dal chrome');
+}
+{
+  // review 1, finding importante: paragraphWords era l'unico dei quattro helper senza
+  // filtro chrome - un <p> lungo dentro <footer> sporcava il conteggio dei paragrafi.
+  const conFooterLungo = '<html><body><main><p>' + 'parola '.repeat(15) + '</p></main><footer><p>' + 'parola '.repeat(160) + '</p></footer></body></html>';
+  const pw = paragraphWords(conFooterLungo);
+  ok(pw.total === 1 && pw.long === 0, 'lib: paragraphWords ignora i <p> dentro <footer> (avuto ' + JSON.stringify(pw) + ')');
+}
+{
+  // review 1, finding importante: match sovrapposti (unita di misura + migliaia) non
+  // vanno contati due volte per lo stesso numero, es. "1.500 CHF".
+  const ev = citableEvidence('<p>pacchetti da 1.500 CHF, 2.300 CHF e 4.900 CHF.</p>', 'esempio.it');
+  ok(ev.numbers === 3, 'lib: citableEvidence deduplica match sovrapposti sullo stesso numero (avuto ' + ev.numbers + ')');
+}
+{
+  // review 1, finding importante: con un numero pari di sezioni la mediana e la media
+  // dei due valori centrali (20 e 40 -> 30), non il valore superiore (40, che darebbe
+  // "warn" invece di "good").
+  const medianTest = '<html lang="it"><body><main><h1>Test mediana</h1>'
+    + '<h2>Domanda uno?</h2><p>' + 'parola '.repeat(19) + 'fine.</p>'
+    + '<h2>Domanda due?</h2><p>' + 'parola '.repeat(39) + 'fine.</p>'
+    + '<p>' + 'parola '.repeat(250) + '</p>'
+    + '</main></body></html>';
+  const a = analyzeAnswerability({ served: medianTest, host: 'esempio.it' });
+  ok(a.checks[0].status === 'good', 'answerability: mediana vera (30) su 2 sezioni, non il valore superiore (40): ' + a.checks[0].detail);
 }
 {
   ok(pageLang('<html lang="fr"><body></body></html>') === 'fr', 'pageLang: attributo lang rispettato');

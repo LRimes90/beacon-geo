@@ -56,6 +56,7 @@ export const pt = {
   'readability.jsdelta.name': 'Delta JavaScript (sem JS vs. render)',
   'readability.jsdelta.detail': '+{gain} palavras após o rendering (servido {served} → renderizado {rendered})',
   'readability.jsdelta.fix': 'Muito conteúdo é injetado via JS: os bots que não executam JS não o veem. Considera SSR.',
+  // ---- answerability (placeholder IT — Task 9 traduce) ----
   'answerability.direct.name': 'Risposta diretta dopo il titolo',
   'answerability.direct.detail': 'prima frase dopo H2/H3: {median} parole (mediana su {sections} sezioni)',
   'answerability.direct.fix': 'Apri ogni sezione con una frase di risposta sotto le 30 parole, poi sviluppa',

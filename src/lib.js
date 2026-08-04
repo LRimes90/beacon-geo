@@ -232,13 +232,21 @@ function firstSentence(text) {
 }
 
 // "Cornice" della pagina (menu, testata, piè di pagina): condivisa da sections,
-// extractableBlocks e citableEvidence, altrimenti un h3 di sidebar ("Iscriviti alla
-// newsletter"), un menu di link o un numero di telefono in <header> si mischiano
-// col contenuto reale — e ogni sito WordPress ha tutti e tre.
+// extractableBlocks, paragraphWords e citableEvidence, altrimenti un h3 di sidebar
+// ("Iscriviti alla newsletter"), un menu di link o un numero di telefono in <header>
+// si mischiano col contenuto reale — e ogni sito WordPress ha tutti e tre.
 const stripChrome = (html) => html
   .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
   .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
   .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ');
+
+// Parole del solo CONTENUTO (chrome escluso): wordCount(html) misura la pagina intera
+// e resta così per readabilityMetrics; qui serve lo stesso numero che sections/
+// extractableBlocks/paragraphWords/citableEvidence già usano, altrimenti il gate delle
+// 300 parole e i denominatori vengono gonfiati da menu/testata/footer (round di review 1).
+export function contentWords(html) {
+  return wordCount(stripChrome(bodyHtml(html)));
+}
 
 // Una voce per ogni H2/H3, con la lunghezza in parole della prima frase del blocco
 // di testo che lo segue. Il blocco è il primo <p> dopo l'heading; se non c'è <p>,
@@ -314,10 +322,30 @@ export function extractableBlocks(html) {
 // Distribuzione delle parole per paragrafo. I paragrafi sotto le 10 parole
 // (didascalie, note, "Leggi anche") non sono prosa: fuori dal denominatore.
 export function paragraphWords(html) {
-  const words = (bodyHtml(html).match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [])
+  const words = (stripChrome(bodyHtml(html)).match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [])
     .map((p) => textWords(stripTags(p)))
     .filter((n) => n >= 10);
   return { total: words.length, long: words.filter((n) => n > 120).length, words };
+}
+
+// Un numero come "1.500 CHF" matcha sia il pattern con unità sia quello delle migliaia:
+// senza dedup viene contato 2 volte per lo stesso dato (round di review 1). Si fondono
+// gli intervalli di match sovrapposti e si conta un gruppo fuso una volta sola.
+function countNumberTokens(text) {
+  const patterns = [
+    /\d[\d.,]*\s?(?:%|€|\$|CHF|USD|EUR|km|kg|mq|m²|GB|MB|ms|s\b|min\b|ore|anni|giorni|volte|x\b)/gi,
+    /\b(?:19|20)\d{2}\b/g,
+    /\b\d{1,3}(?:[.\s]\d{3})+\b/g,
+  ];
+  const spans = [];
+  for (const re of patterns) for (const m of text.matchAll(re)) spans.push([m.index, m.index + m[0].length]);
+  spans.sort((a, b) => a[0] - b[0]);
+  let groups = 0, curEnd = -1;
+  for (const [start, end] of spans) {
+    if (start >= curEnd) { groups++; curEnd = end; }
+    else if (end > curEnd) { curEnd = end; }
+  }
+  return groups;
 }
 
 // Elementi che rendono un passaggio citabile: dati con unità di misura, anni,
@@ -325,13 +353,10 @@ export function paragraphWords(html) {
 export function citableEvidence(html, host) {
   const body = stripChrome(bodyHtml(html));
   const text = stripTags(body);
-  const withUnit = text.match(/\d[\d.,]*\s?(?:%|€|\$|CHF|USD|EUR|km|kg|mq|m²|GB|MB|ms|s\b|min\b|ore|anni|giorni|volte|x\b)/gi) || [];
-  const years = text.match(/\b(?:19|20)\d{2}\b/g) || [];
-  const big = text.match(/\b\d{1,3}(?:[.\s]\d{3})+\b/g) || [];
+  const numbers = countNumberTokens(text);
   const quotes = count(body, /<blockquote\b/gi) + count(body, /<cite\b/gi);
   let extLinks = 0;
   for (const p of body.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || []) extLinks += links(p, host).external;
-  const numbers = withUnit.length + years.length + big.length;
   return { numbers, quotes, extLinks, total: numbers + quotes + extLinks };
 }
 
