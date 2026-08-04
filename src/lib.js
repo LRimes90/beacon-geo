@@ -231,11 +231,20 @@ function firstSentence(text) {
   return m ? m[0] : s.slice(0, 600);
 }
 
+// "Cornice" della pagina (menu, testata, piè di pagina): condivisa da sections,
+// extractableBlocks e citableEvidence, altrimenti un h3 di sidebar ("Iscriviti alla
+// newsletter"), un menu di link o un numero di telefono in <header> si mischiano
+// col contenuto reale — e ogni sito WordPress ha tutti e tre.
+const stripChrome = (html) => html
+  .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
+  .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
+  .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ');
+
 // Una voce per ogni H2/H3, con la lunghezza in parole della prima frase del blocco
 // di testo che lo segue. Il blocco è il primo <p> dopo l'heading; se non c'è <p>,
 // è il testo nudo fino all'heading successivo.
 export function sections(html) {
-  const body = bodyHtml(html);
+  const body = stripChrome(bodyHtml(html));
   const re = /<h([23])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
   const found = [];
   let m;
@@ -248,18 +257,46 @@ export function sections(html) {
   });
 }
 
+// Blocchi <ul>/<ol> di primo livello in `html`: un backreference su un nome di tag
+// generico (\1) si ferma al primo tag di chiusura omonimo, che con una lista annidata
+// è quello INTERNO, non quello che chiude la lista esterna ("<ul><li>passo<ul>...
+// </ul></li></ul>" veniva letto come chiuso al primo </ul>). Qui si segue la
+// profondità di apertura/chiusura invece del backreference.
+function topLevelLists(html) {
+  const re = /<(\/?)(ul|ol)\b[^>]*>/gi;
+  const blocks = [];
+  let depth = 0, from = -1, m;
+  while ((m = re.exec(html))) {
+    if (!m[1]) { if (depth === 0) from = re.lastIndex; depth++; }
+    else if (depth > 0 && --depth === 0) blocks.push(html.slice(from, m.index));
+  }
+  return blocks;
+}
+
+// Rimuove le sotto-liste annidate dentro una lista di primo livello (stessa logica
+// di profondità di topLevelLists, applicata al contenuto interno): senza questo, "passo
+// uno" con una sotto-lista di 2 punti conterebbe 3 <li> invece di 1 voce di primo livello.
+// ponytail: se non c'è spazio attorno al tag annidato nell'HTML sorgente, le due parole
+// ai margini possono toccarsi senza spazio — caso raro, non coperto.
+function stripNestedLists(html) {
+  const re = /<(\/?)(ul|ol)\b[^>]*>/gi;
+  let depth = 0, last = 0, out = '', m;
+  while ((m = re.exec(html))) {
+    if (!m[1]) { if (depth === 0) out += html.slice(last, m.index); depth++; }
+    else if (depth > 0 && --depth === 0) last = re.lastIndex;
+  }
+  return out + html.slice(last);
+}
+
 // Blocchi che una AI può estrarre e citare: liste con almeno 3 voci e tabelle con
 // intestazioni. Navigazione, header e footer sono esclusi: senza questo filtro ogni
 // sito WordPress guadagnerebbe punti per il proprio menu. Esclusa anche la lista in
 // cui oltre il 70% delle voci è praticamente solo un link (widget "articoli recenti").
 export function extractableBlocks(html) {
-  const body = bodyHtml(html)
-    .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
-    .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
-    .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ');
+  const body = stripChrome(bodyHtml(html));
   let lists = 0;
-  for (const m of body.matchAll(/<(ul|ol)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
-    const items = m[2].match(/<li\b[\s\S]*?<\/li>/gi) || [];
+  for (const listInner of topLevelLists(body)) {
+    const items = stripNestedLists(listInner).match(/<li\b[\s\S]*?<\/li>/gi) || [];
     if (items.length < 3) continue;
     const linkOnly = items.filter((li) => {
       const txt = stripTags(li);
@@ -284,11 +321,9 @@ export function paragraphWords(html) {
 }
 
 // Elementi che rendono un passaggio citabile: dati con unità di misura, anni,
-// citazioni esplicite, link a fonti esterne dentro il testo (non nel menu).
+// citazioni esplicite, link a fonti esterne dentro il testo (non nel menu/testata/footer).
 export function citableEvidence(html, host) {
-  const body = bodyHtml(html)
-    .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
-    .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ');
+  const body = stripChrome(bodyHtml(html));
   const text = stripTags(body);
   const withUnit = text.match(/\d[\d.,]*\s?(?:%|€|\$|CHF|USD|EUR|km|kg|mq|m²|GB|MB|ms|s\b|min\b|ore|anni|giorni|volte|x\b)/gi) || [];
   const years = text.match(/\b(?:19|20)\d{2}\b/g) || [];

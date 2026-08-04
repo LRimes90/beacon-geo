@@ -97,6 +97,16 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // Tabella: solo con intestazioni (una tabella di layout non è dato estraibile).
   ok(extractableBlocks('<body><main><table><tr><th>A</th></tr><tr><td>1</td></tr></table></main></body>').tables === 1, 'blocchi: tabella con <th> conta');
   ok(extractableBlocks('<body><main><table><tr><td>layout</td></tr></table></main></body>').tables === 0, 'blocchi: tabella senza <th> non conta');
+
+  // Lista con sotto-elenco annidato (istruzioni passo-passo): il backreference sul
+  // nome di tag si fermava al primo </ul> omonimo, cioe quello della sotto-lista
+  // interna, azzerando la lista esterna. Deve valere 1, non 0 e non 2.
+  const passi = '<body><main><ul>'
+    + '<li>Verifica il robots.txt del sito<ul><li>controlla lo user-agent</li><li>controlla il percorso disallow</li></ul></li>'
+    + '<li>Controlla la sitemap XML</li>'
+    + '<li>Misura il testo servito senza JavaScript</li>'
+    + '</ul></main></body>';
+  ok(extractableBlocks(passi).lists === 1, 'blocchi: lista con sotto-elenco annidato conta 1 (avuti ' + extractableBlocks(passi).lists + ')');
 }
 {
   // sections(): prima frase dopo ogni H2/H3, in parole.
@@ -110,6 +120,14 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(s[0].firstSentenceWords >= 10 && s[0].firstSentenceWords <= 16, 'sezioni: prima frase misurata, non tutto il paragrafo: ' + s[0].firstSentenceWords);
   ok(s[1].firstSentenceWords > 70, 'sezioni: paragrafo senza punto fermo conta come frase lunga: ' + s[1].firstSentenceWords);
   ok(sections('<body><main><p>nessun heading</p></main></body>').length === 0, 'sezioni: nessun H2/H3 → array vuoto');
+
+  // Un h3 nel footer (widget "Iscriviti alla newsletter") non e una sezione di
+  // contenuto: extractableBlocks gia esclude nav/header/footer, sections deve farlo
+  // allo stesso modo, altrimenti ogni sito WordPress guadagna punti dal proprio footer.
+  const conFooter = '<body><main><h2>Come funziona il GEO</h2><p>Il GEO ottimizza i contenuti per i motori generativi, non solo per Google.</p></main>'
+    + '<footer><h3>Iscriviti alla newsletter</h3><p>Ricevi aggiornamenti ogni settimana sul mondo GEO.</p></footer></body>';
+  const sf = sections(conFooter);
+  ok(sf.length === 1, 'sezioni: heading nel footer escluso (avuti ' + sf.length + ')');
 }
 {
   // paragraphWords(): i paragrafi sotto le 10 parole (didascalie, note) non entrano nella distribuzione.
@@ -128,6 +146,13 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(ev.numbers >= 3, 'evidenza: percentuale, anno e numero grande contati (' + ev.numbers + ')');
   ok(ev.quotes === 1, 'evidenza: blockquote contato');
   ok(ev.extLinks === 1, 'evidenza: solo il link esterno conta, non quello interno (' + ev.extLinks + ')');
+
+  // Boilerplate di testata (telefono, anno "dal 2015") non e evidenza dell'articolo:
+  // extractableBlocks/sections escludono gia <header>, citableEvidence deve fare lo stesso.
+  const conHeader = '<body><header><p>Chiamaci al numero 091 123 45 67, dal 2015 al vostro servizio.</p></header>'
+    + '<main><p>Il nostro studio segue clienti in Ticino dal 2015.</p></main></body>';
+  const evh = citableEvidence(conHeader, 'esempio.it');
+  ok(evh.numbers === 1, 'evidenza: numeri nella testata esclusi, resta solo l\'anno nel main (avuti ' + evh.numbers + ')');
 }
 {
   ok(htmlLang('<html lang="de-CH"><body></body></html>') === 'de', 'lingua: <html lang="de-CH"> → de');
