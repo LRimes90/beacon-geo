@@ -120,6 +120,11 @@ Bing/Copilot). `llms.txt` diventa un check **informativo** con una nota che ne d
 l'uso reale — indice di documentazione per assistenti di codice come Cursor e Cline — e
 **senza** un `fix` che promette citazioni.
 
+Concretamente: il punteggio della categoria si calcola su `robots.txt` e `sitemap.xml`
+(50/50); il check `llms.txt` compare nell'elenco con il proprio stato ma **non contribuisce
+al punteggio**. È un check informativo dentro una categoria pesata, non una categoria
+informativa: la distinzione è nel contributo allo score, non nella visibilità.
+
 Precedente di mercato: Otterly ha rimosso il checker `llms.txt` dal proprio GEO audit dopo
 aver analizzato milioni di citazioni su ChatGPT, Perplexity e AI Overviews, non vedendo
 impatti.
