@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText } from './src/lib.js';
+import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
@@ -71,6 +71,68 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(semanticRatio(html).semantic === 2, 'tag semantici contati (header+main)');
   ok(imgAlt(html).total === 2 && imgAlt(html).withAlt === 1, 'alt immagini contate');
   ok(wordCount('<p>due parole</p>') === 2, 'word count ignora i tag');
+}
+
+// answer-readiness: helper di parsing. I falsi positivi vengono prima dei casi felici:
+// un menu di navigazione NON è un blocco estraibile, e ogni sito WordPress ne ha uno.
+{
+  const menu = '<body><nav><ul><li><a href="/a">Home</a></li><li><a href="/b">Chi siamo</a></li><li><a href="/c">Contatti</a></li></ul></nav><main><p>testo</p></main></body>';
+  const eb = extractableBlocks(menu);
+  ok(eb.lists === 0, 'blocchi: la lista dentro <nav> non conta (avuti ' + eb.lists + ')');
+
+  const footerMenu = '<body><footer><ul><li><a href="/x">Privacy</a></li><li><a href="/y">Cookie</a></li><li><a href="/z">Note legali</a></li></ul></footer></body>';
+  ok(extractableBlocks(footerMenu).lists === 0, 'blocchi: la lista nel footer non conta');
+
+  // Lista di soli link fuori da nav (widget "articoli recenti"): >70% link-only → esclusa.
+  const widget = '<body><main><ul><li><a href="/1">Primo articolo</a></li><li><a href="/2">Secondo articolo</a></li><li><a href="/3">Terzo articolo</a></li></ul></main></body>';
+  ok(extractableBlocks(widget).lists === 0, 'blocchi: lista di soli link esclusa (widget, non contenuto)');
+
+  // Lista vera di contenuto: conta.
+  const vera = '<body><main><ul><li>Il primo passo è verificare il robots.txt del sito</li><li>Il secondo è controllare la sitemap</li><li>Il terzo è misurare il testo servito senza JavaScript</li></ul></main></body>';
+  ok(extractableBlocks(vera).lists === 1, 'blocchi: lista di contenuto conta');
+
+  // Lista corta: sotto i 3 <li> non è un blocco.
+  ok(extractableBlocks('<body><main><ul><li>uno che dice qualcosa</li><li>due che dice altro</li></ul></main></body>').lists === 0, 'blocchi: meno di 3 voci non conta');
+
+  // Tabella: solo con intestazioni (una tabella di layout non è dato estraibile).
+  ok(extractableBlocks('<body><main><table><tr><th>A</th></tr><tr><td>1</td></tr></table></main></body>').tables === 1, 'blocchi: tabella con <th> conta');
+  ok(extractableBlocks('<body><main><table><tr><td>layout</td></tr></table></main></body>').tables === 0, 'blocchi: tabella senza <th> non conta');
+}
+{
+  // sections(): prima frase dopo ogni H2/H3, in parole.
+  const html = '<body><main>'
+    + '<h2>Che cos\'è il GEO?</h2><p>È la disciplina che rende un sito citabile dai motori generativi. Segue una spiegazione molto più lunga che non deve entrare nel conteggio della prima frase.</p>'
+    + '<h3>Serve a tutti?</h3><p>' + 'parola '.repeat(80) + 'fine.</p>'
+    + '</main></body>';
+  const s = sections(html);
+  ok(s.length === 2, 'sezioni: due heading H2/H3 trovati (avuti ' + s.length + ')');
+  ok(s[0].heading.includes('GEO'), 'sezioni: testo dell\'heading estratto senza tag');
+  ok(s[0].firstSentenceWords >= 10 && s[0].firstSentenceWords <= 16, 'sezioni: prima frase misurata, non tutto il paragrafo: ' + s[0].firstSentenceWords);
+  ok(s[1].firstSentenceWords > 70, 'sezioni: paragrafo senza punto fermo conta come frase lunga: ' + s[1].firstSentenceWords);
+  ok(sections('<body><main><p>nessun heading</p></main></body>').length === 0, 'sezioni: nessun H2/H3 → array vuoto');
+}
+{
+  // paragraphWords(): i paragrafi sotto le 10 parole (didascalie, note) non entrano nella distribuzione.
+  const html = '<body><main><p>' + 'parola '.repeat(150) + '</p><p>Foto: archivio</p><p>' + 'parola '.repeat(40) + '</p></main></body>';
+  const p = paragraphWords(html);
+  ok(p.total === 2, 'paragrafi: didascalia sotto le 10 parole esclusa (totale ' + p.total + ')');
+  ok(p.long === 1, 'paragrafi: uno solo oltre le 120 parole');
+}
+{
+  // citableEvidence(): numeri con unità, citazioni, link esterni dentro il testo.
+  const html = '<body><main><p>Nel 2026 il 97% dei file non viene letto, su 137.210 domini.</p>'
+    + '<blockquote>Correlazione non è causalità.</blockquote>'
+    + '<p>Fonte: <a href="https://ahrefs.com/blog/llmstxt-study/">studio Ahrefs</a> e <a href="/interno">pagina interna</a>.</p>'
+    + '</main></body>';
+  const ev = citableEvidence(html, 'esempio.it');
+  ok(ev.numbers >= 3, 'evidenza: percentuale, anno e numero grande contati (' + ev.numbers + ')');
+  ok(ev.quotes === 1, 'evidenza: blockquote contato');
+  ok(ev.extLinks === 1, 'evidenza: solo il link esterno conta, non quello interno (' + ev.extLinks + ')');
+}
+{
+  ok(htmlLang('<html lang="de-CH"><body></body></html>') === 'de', 'lingua: <html lang="de-CH"> → de');
+  ok(htmlLang('<html><body></body></html>') === null, 'lingua: senza attributo → null');
+  ok(stripTags('<p>uno <b>due</b>&nbsp;tre</p>').trim() === 'uno due tre', 'stripTags: tag via, entità collassata');
 }
 
 // contentHtml/bodyHtml — quello che sembra un tag ma non è nel DOM non va contato

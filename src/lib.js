@@ -198,6 +198,108 @@ export function links(html, host) {
   return { internal, external, total: hrefs.length };
 }
 
+// ---------- answer-readiness (funzioni pure) ----------
+// ponytail: regex, non un parser DOM — stessa scelta di semanticRatio/headings/imgAlt
+// ponytail: e vincolo di progetto (zero dipendenze). HTML gravemente malformato (<p> mai
+// ponytail: chiusi) degrada paragraphWords: la via d'uscita è un tokenizer minimale, non cheerio.
+
+// Testo nudo: via i tag, le entità diventano spazio, gli spazi si collassano.
+export function stripTags(html) {
+  return String(html || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z#0-9]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Lingua dichiarata dalla pagina. Serve al check dei titoli-domanda: le parole
+// interrogative vanno cercate nella lingua del SITO, non in quella del report.
+export function htmlLang(html) {
+  const m = String(html || '').match(/<html[^>]*\slang=["']?([a-z]{2})/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+// Conta le parole di un testo già nudo (stessa regola di wordCount, senza stripping).
+const textWords = (s) => (String(s || '').match(/[\p{L}\p{N}]{2,}/gu) || []).length;
+
+// Prima frase: fino al primo punto/!/? seguito da spazio o fine. Senza punteggiatura
+// entro 600 caratteri si taglia lì: un muro di testo senza punti è già la risposta
+// che il check vuole segnalare.
+function firstSentence(text) {
+  const s = String(text || '').trim();
+  const m = s.match(/^[\s\S]{1,600}?[.!?](?:\s|$)/);
+  return m ? m[0] : s.slice(0, 600);
+}
+
+// Una voce per ogni H2/H3, con la lunghezza in parole della prima frase del blocco
+// di testo che lo segue. Il blocco è il primo <p> dopo l'heading; se non c'è <p>,
+// è il testo nudo fino all'heading successivo.
+export function sections(html) {
+  const body = bodyHtml(html);
+  const re = /<h([23])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
+  const found = [];
+  let m;
+  while ((m = re.exec(body))) found.push({ heading: stripTags(m[2]), from: re.lastIndex, level: m[1] });
+  return found.map((s, i) => {
+    const chunk = body.slice(s.from, i + 1 < found.length ? found[i + 1].from : body.length);
+    const p = chunk.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
+    const text = stripTags(p ? p[1] : chunk);
+    return { heading: s.heading, level: s.level, firstSentenceWords: textWords(firstSentence(text)) };
+  });
+}
+
+// Blocchi che una AI può estrarre e citare: liste con almeno 3 voci e tabelle con
+// intestazioni. Navigazione, header e footer sono esclusi: senza questo filtro ogni
+// sito WordPress guadagnerebbe punti per il proprio menu. Esclusa anche la lista in
+// cui oltre il 70% delle voci è praticamente solo un link (widget "articoli recenti").
+export function extractableBlocks(html) {
+  const body = bodyHtml(html)
+    .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
+    .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ');
+  let lists = 0;
+  for (const m of body.matchAll(/<(ul|ol)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
+    const items = m[2].match(/<li\b[\s\S]*?<\/li>/gi) || [];
+    if (items.length < 3) continue;
+    const linkOnly = items.filter((li) => {
+      const txt = stripTags(li);
+      if (!txt) return true;
+      const anchor = stripTags((li.match(/<a\b[\s\S]*?<\/a>/i) || [''])[0]);
+      return anchor.length >= txt.length * 0.8;
+    }).length;
+    if (linkOnly / items.length > 0.7) continue;
+    lists++;
+  }
+  const tables = [...body.matchAll(/<table\b[\s\S]*?<\/table>/gi)].filter((m) => /<th\b/i.test(m[0])).length;
+  return { lists, tables, total: lists + tables };
+}
+
+// Distribuzione delle parole per paragrafo. I paragrafi sotto le 10 parole
+// (didascalie, note, "Leggi anche") non sono prosa: fuori dal denominatore.
+export function paragraphWords(html) {
+  const words = (bodyHtml(html).match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [])
+    .map((p) => textWords(stripTags(p)))
+    .filter((n) => n >= 10);
+  return { total: words.length, long: words.filter((n) => n > 120).length, words };
+}
+
+// Elementi che rendono un passaggio citabile: dati con unità di misura, anni,
+// citazioni esplicite, link a fonti esterne dentro il testo (non nel menu).
+export function citableEvidence(html, host) {
+  const body = bodyHtml(html)
+    .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ');
+  const text = stripTags(body);
+  const withUnit = text.match(/\d[\d.,]*\s?(?:%|€|\$|CHF|USD|EUR|km|kg|mq|m²|GB|MB|ms|s\b|min\b|ore|anni|giorni|volte|x\b)/gi) || [];
+  const years = text.match(/\b(?:19|20)\d{2}\b/g) || [];
+  const big = text.match(/\b\d{1,3}(?:[.\s]\d{3})+\b/g) || [];
+  const quotes = count(body, /<blockquote\b/gi) + count(body, /<cite\b/gi);
+  let extLinks = 0;
+  for (const p of body.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || []) extLinks += links(p, host).external;
+  const numbers = withUnit.length + years.length + big.length;
+  return { numbers, quotes, extLinks, total: numbers + quotes + extLinks };
+}
+
 // ---------- robots.txt ----------
 // Ritorna { isAllowed(ua, path), sitemaps, groups }. Longest-match per path (semplificato per MVP).
 export function parseRobots(txt) {
