@@ -65,12 +65,12 @@ export default function AiAct() {
       <ToolNav active="aiact" tag="AI Act" />
 
       <main className="wrap">
-        <div className="hero">
+        <header className="hero">
           <a className="back-home" href="https://lucarimediotti.com">&larr; {t('Torna a lucarimediotti.com')}</a>
           <div className="kicker">{t('AI Act · Reg. (UE) 2024/1689 · applicabile dal 2 agosto 2026')}</div>
           <h1><Rich s="L’AI Act *ti riguarda*?" /></h1>
           <p className="lede">{t('Dieci domande più una scansione della pagina: definisce il perimetro, elenca gli obblighi già in vigore e le scadenze. Vale anche dalla Svizzera — l’art. 2 §1 lett. c prende chi è fuori dall’UE quando il risultato del sistema è usato nell’Unione.')}</p>
-        </div>
+        </header>
 
         <form onSubmit={run}>
           <input type="text" placeholder={t('iltuosito.ch (facoltativo)')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito da analizzare (facoltativo)')} />
@@ -126,15 +126,15 @@ export default function AiAct() {
           })}
         </section>
 
-        <div className="notice">
+        <aside className="notice">
           <span><strong>{t('Non è un parere legale.')}</strong> {t('Il risultato è un perimetro con la lista delle verifiche da fare. La qualificazione del ruolo e della classe di rischio va confermata da una persona competente.')}</span>
-        </div>
+        </aside>
 
         {err && <p className="err">⚠ {err}</p>}
 
         {av && (
           <section className="result">
-            <div className="rhead">
+            <header className="rhead">
               <div className="vmark" style={{ color: SCOPE_COLOR[av.verdict.headline] || 'var(--beam)' }}>
                 {av.verdict.blocking ? '✕' : av.verdict.headline === 'out' ? '✓' : '◆'}
               </div>
@@ -149,16 +149,16 @@ export default function AiAct() {
                     && ' · ' + t('perimetro parziale') + ' (' + av.coverage.answered + '/' + av.coverage.applicable + ')'}
                 </div>
               </div>
-            </div>
+            </header>
 
             {av.verdict.reasons.length > 0 && (
-              <div className="rights" style={{ marginTop: 22 }}>
+              <section className="rights" style={{ marginTop: 22 }}>
                 <div className="rt">{t('Perché')}</div>
                 <ul>{av.verdict.reasons.map((r, i) => <li key={i}><span className="pn">·</span> {r}</li>)}</ul>
-              </div>
+              </section>
             )}
 
-            <div className="rights" style={{ marginTop: 18 }}>
+            <section className="rights" style={{ marginTop: 18 }}>
               <div className="rt">{t('Obblighi da presidiare')} <span className="info">— {av.obligations.length === 0 ? t('nessuno rilevato dalle risposte') : av.due.length === 0 ? t('nessuno già esigibile') : av.due.length + ' ' + t('già in vigore')}</span></div>
               {av.obligations.length === 0
                 ? <p style={{ marginTop: 12, color: 'var(--muted)', fontSize: 14 }}>{t('Nessun obbligo dell’AI Act emerge dalle risposte. Restano gli obblighi di protezione dei dati se tratti dati personali.')}</p>
@@ -178,10 +178,10 @@ export default function AiAct() {
                       </li>
                     ))}
                   </ul>}
-            </div>
+            </section>
 
             {dates && (
-              <div className="rights" style={{ marginTop: 18 }}>
+              <section className="rights" style={{ marginTop: 18 }}>
                 <div className="rt">{t('Scadenze di applicabilità')} <span className="info">— {t('art. 113, come modificato dal pacchetto Digital Omnibus')}</span></div>
                 <ul>
                   <li><span className="pn">·</span> <code>{dates.prohibited}</code> — {t('pratiche vietate (art. 5) e alfabetizzazione IA (art. 4)')}</li>
@@ -190,27 +190,27 @@ export default function AiAct() {
                   <li><span className="pn">·</span> <code>{dates.highRiskStandalone}</code> — {t('alto rischio, sistemi autonomi (art. 8-17, 26-27)')}</li>
                   <li><span className="pn">·</span> <code>{dates.highRiskEmbedded}</code> — {t('alto rischio incorporato in prodotti regolamentati')}</li>
                 </ul>
-              </div>
+              </section>
             )}
 
             {scan && (
-              <div className="rights" style={{ marginTop: 18 }}>
+              <section className="rights" style={{ marginTop: 18 }}>
                 <div className="rt">{t('Segnali trovati nella pagina')} <span className="info">— {res.scan.host} · {scan.score === null ? t('nessun controllo valutabile: la pagina non espone segnali automatici') : scan.score + '/100 ' + t('segnali di trasparenza rilevabili')}</span></div>
                 <ul>
                   {scan.checks.map((c, i) => (
                     <li key={i}><span className={pin(c.status)}>{mark(c.status)}</span> <span>{c.name} <code>{c.ref}</code> — {c.detail}</span></li>
                   ))}
                 </ul>
-              </div>
+              </section>
             )}
 
             {res.scan && !res.scan.fetchedOk && (
-              <div className="notice" style={{ marginTop: 18 }}>
+              <aside className="notice" style={{ marginTop: 18 }}>
                 <span>{t('Pagina non raggiungibile: la valutazione usa solo le tue risposte.')}</span>
-              </div>
+              </aside>
             )}
 
-            <div className="fixes">
+            <section className="fixes">
               <h3>{t('Da fare')}</h3>
               <ul>
                 {av.obligations.filter((o) => o.severity === 'blocking').length > 0 && <li>{t('Sospendi l’uso della pratica vietata e documenta la valutazione: il divieto dell’art. 5 è già applicabile e non ammette adeguamento graduale.')}</li>}
@@ -219,7 +219,7 @@ export default function AiAct() {
                 <li>{t('Aggiorna i contratti con i fornitori di IA: chi risponde di cosa, quali dati escono, dove sono trattati.')}</li>
                 <li>{t('In Svizzera: nLPD e diritto d’autore si applicano comunque. Un progetto di legge svizzero sull’IA è atteso in consultazione entro fine 2026.')}</li>
               </ul>
-            </div>
+            </section>
 
             <p className="disclaim">{av.disclaimer}</p>
           </section>

@@ -73,12 +73,12 @@ export default function Report() {
     <>
       <ToolNav active="report" tag="report" />
       <main className="wrap">
-        <div className="hero">
+        <header className="hero">
                     <a className="back-home" href="https://lucarimediotti.com">&larr; {t('Torna a lucarimediotti.com')}</a>
           <div className="kicker">{t('Report completo · GEO · Accessibilità · Performance')}</div>
           <h1><Rich s="Un'unica *radiografia* del sito" /></h1>
           <p className="lede">{t('I tre tool in una sola scansione, in un report brandizzato pronto da consegnare al cliente.')}</p>
-        </div>
+        </header>
 
         <form onSubmit={run}>
           <input type="text" placeholder={t('iltuosito.it')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito da analizzare')} />
@@ -98,12 +98,12 @@ export default function Report() {
               <Card label="Performance" score={perfScore} sub={perfScore == null ? t('chiave PSI mancante') : 'Lighthouse'} c={colPerf(perfScore || 0)} />
             </div>
 
-            <div className="notice" style={{ marginTop: 18 }}>
+            <aside className="notice" style={{ marginTop: 18 }}>
               <span>{t('I tre punteggi')} <strong>{t('non si sommano')}</strong>: {t('misurano dimensioni diverse. Il report li presenta affiancati con il dettaglio dei fix.')}</span>
-            </div>
+            </aside>
 
             {res.history?.previous && res.history.delta && (
-              <div className="rights" style={{ marginTop: 18 }}>
+              <section className="rights" style={{ marginTop: 18 }}>
                 <div className="rt">{t('Rispetto alla scansione precedente')} <span className="info">— {new Date(res.history.previous.ts).toLocaleDateString('it-CH')} · {res.history.count} {t('scansioni totali')}</span></div>
                 <ul>
                   <DeltaRow label="GEO" d={res.history.delta.geo} />
@@ -111,7 +111,7 @@ export default function Report() {
                   <DeltaRow label="Performance" d={res.history.delta.perf} />
                   <DeltaRow label={t('Violazioni axe')} d={res.history.delta.axe} invert />
                 </ul>
-              </div>
+              </section>
             )}
 
             <div style={{ marginTop: 20, display: 'flex', gap: 12, flexWrap: 'wrap' }}>

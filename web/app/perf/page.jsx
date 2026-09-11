@@ -37,12 +37,12 @@ export default function Perf() {
       <ToolNav active="perf" tag="performance" />
 
       <main className="wrap">
-        <div className="hero">
+        <header className="hero">
                     <a className="back-home" href="https://lucarimediotti.com">&larr; {t('Torna a lucarimediotti.com')}</a>
           <div className="kicker">Performance · Core Web Vitals · Lighthouse</div>
           <h1><Rich s="Quanto è *veloce* il tuo sito?" /></h1>
           <p className="lede">{t('Punteggio Lighthouse reale e Core Web Vitals via PageSpeed Insights di Google — gli stessi numeri che usano i motori di ricerca.')}</p>
-        </div>
+        </header>
 
         <form onSubmit={run}>
           <input type="text" placeholder={t('iltuosito.it')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito da analizzare')} />
@@ -56,34 +56,34 @@ export default function Perf() {
         {err && <p className="err">⚠ {err}</p>}
 
         {res && !res.ok && (
-          <div className="notice" style={{ marginTop: 18 }}><span>{t('Misurazione non riuscita:')} {res.reason}</span></div>
+          <aside className="notice" style={{ marginTop: 18 }}><span>{t('Misurazione non riuscita:')} {res.reason}</span></aside>
         )}
 
         {p && (
           <section className="result">
-            <div className="rhead">
+            <header className="rhead">
               <div style={{ fontFamily: 'var(--serif)', fontWeight: 700, fontSize: 44, color: color(p.score) }}>{p.score}<span style={{ fontSize: 18, color: 'var(--muted)' }}>/100</span></div>
               <div className="rmeta">
                 <div className="host">{res.url}</div>
                 <div className="verdict">{t(verdict(p.score))}</div>
                 <div className="sub">{t('Lighthouse · strategia')} {res.strategy}{p.field ? ` · dati reali utenti: ${p.field.category}` : ''}</div>
               </div>
-            </div>
+            </header>
 
-            <div className="rights" style={{ marginTop: 22 }}>
+            <section className="rights" style={{ marginTop: 22 }}>
               <div className="rt">Core Web Vitals <span className="info">— {t('misurati in laboratorio')}</span></div>
               <ul>
                 {p.metrics.map((m, i) => (
                   <li key={i}><span className={pin(m.status)}>{mark(m.status)}</span> {m.name} — {m.detail}</li>
                 ))}
               </ul>
-            </div>
+            </section>
 
             {p.opportunities.length > 0 && (
-              <div className="fixes">
+              <section className="fixes">
                 <h3>{t('Dove guadagnare velocità')}</h3>
                 <ul>{p.opportunities.map((o, i) => <li key={i}>{o.title} <em style={{ color: 'var(--muted)' }}>(~{(o.savingsMs / 1000).toFixed(1)}s)</em></li>)}</ul>
-              </div>
+              </section>
             )}
           </section>
         )}

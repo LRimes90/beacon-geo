@@ -286,3 +286,12 @@ button.go:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
   body::before,.brand .dot{animation:none}
   .result{animation:none} .gauge .fill,.bar i,.fcard{transition:none}
 }
+
+/* Footer globale (layout.jsx): licenza, repo, autore e i file per agenti.
+   Fuori da .wrap, quindi si impagina da sé con lo stesso max-width. */
+.site-foot{max-width:920px;margin:64px auto 0;padding:24px 20px 40px;
+  border-top:1px solid var(--card-line);font:400 13px/1.7 var(--mono);color:var(--muted);
+  display:flex;flex-wrap:wrap;gap:6px 24px;justify-content:space-between}
+.site-foot p{margin:0}
+.site-foot a{color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.site-foot a:hover{color:var(--ink)}

@@ -60,12 +60,12 @@ export default function A11y() {
       <ToolNav active="a11y" tag="a11y" />
 
       <main className="wrap">
-        <div className="hero">
+        <header className="hero">
                     <a className="back-home" href="https://lucarimediotti.com">&larr; {t('Torna a lucarimediotti.com')}</a>
           <div className="kicker">{t('Accessibilità · WCAG 2.1 · European Accessibility Act')}</div>
           <h1><Rich s="Il tuo sito è *accessibile*?" /></h1>
           <p className="lede">{t("Controlli statici a colpo sicuro sull'HTML servito — quelli che si possono verificare in automatico senza margine d'errore.")}</p>
-        </div>
+        </header>
 
         <form onSubmit={run}>
           <input type="text" placeholder={t('iltuosito.it')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito da analizzare')} />
@@ -74,34 +74,34 @@ export default function A11y() {
         <label className="opt"><input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} /> {t('Analisi approfondita con axe-core (rendering reale: contrasto, ARIA, ~50% dei criteri)')}</label>
         <Turnstile onToken={setTk} />
 
-        <div className="notice">
+        <aside className="notice">
           <span><strong>{t('Non è un audit di conformità.')}</strong> {t('Anche con axe-core il test automatico copre al massimo ~metà dei criteri WCAG. Tastiera, ordine di focus e senso del contenuto per screen reader richiedono verifica umana.')}</span>
-        </div>
+        </aside>
 
         {err && <p className="err">⚠ {err}</p>}
 
         {a && (
           <section className="result">
-            <div className="rhead">
+            <header className="rhead">
               <div style={{ fontFamily: 'var(--serif)', fontWeight: 700, fontSize: 44, color: color(a.score) }}>{a.score}<span style={{ fontSize: 18, color: 'var(--muted)' }}>/100</span></div>
               <div className="rmeta">
                 <div className="host">{res.url}</div>
                 <div className="sub">{t('controlli statici superati (i "info" non contano nel punteggio)')}</div>
                 <button type="button" className="dl" onClick={downloadStatement}>⬇ {t('Bozza dichiarazione di accessibilità')}</button>
               </div>
-            </div>
+            </header>
 
-            <div className="rights" style={{ marginTop: 22 }}>
+            <section className="rights" style={{ marginTop: 22 }}>
               <div className="rt">{t('Controlli WCAG 2.1')} <span className="info">— {t("statici, dall'HTML servito")}</span></div>
               <ul>
                 {a.checks.map((c, i) => (
                   <li key={i}><span className={pin(c.status)}>{mark(c.status)}</span> {c.name} — {c.detail}</li>
                 ))}
               </ul>
-            </div>
+            </section>
 
             {res.axe && res.axe.ok && (
-              <div className="rights" style={{ marginTop: 18 }}>
+              <section className="rights" style={{ marginTop: 18 }}>
                 <div className="rt">axe-core · WCAG 2.1 A/AA <span className="info">— {res.axe.counts.violations} {t('violazioni')} · {res.axe.counts.passes} {t('passati')} · {res.axe.counts.incomplete} {t('da verificare a mano')}</span></div>
                 {res.axe.findings.length === 0
                   ? <p style={{ marginTop: 12, color: 'var(--good)', fontSize: 14 }}>✓ {t('Nessuna violazione automatica rilevata da axe-core.')}</p>
@@ -124,20 +124,20 @@ export default function A11y() {
                         </li>
                       ))}
                     </ul>}
-              </div>
+              </section>
             )}
 
             {res.axe && !res.axe.ok && (
-              <div className="notice" style={{ marginTop: 18 }}>
+              <aside className="notice" style={{ marginTop: 18 }}>
                 <span>{t('Scansione approfondita non disponibile:')} {res.axe.reason}</span>
-              </div>
+              </aside>
             )}
 
             {fixes.length > 0 && (
-              <div className="fixes">
+              <section className="fixes">
                 <h3>{t('Da sistemare')}</h3>
                 <ul>{fixes.map((f, i) => <li key={i}>{f}</li>)}</ul>
-              </div>
+              </section>
             )}
           </section>
         )}
