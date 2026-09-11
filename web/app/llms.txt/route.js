@@ -20,6 +20,15 @@ azioni concrete da fare. Il motore è Node a zero dipendenze, il codice è pubbl
 - [AI Act](https://beacon.lucarimediotti.com/aiact): perimetro di applicabilità del regolamento UE 2024/1689.
 - [Report completo](https://beacon.lucarimediotti.com/report): i quattro audit in un unico documento.
 
+## Per agenti
+
+- [skill.md](https://beacon.lucarimediotti.com/skill.md): Agent Skill con gli endpoint HTTP, i campi della risposta e i limiti dichiarati.
+- [MCP](https://beacon.lucarimediotti.com/.well-known/mcp.json): server MCP su https://beacon.lucarimediotti.com/api/mcp (Streamable HTTP, tool \`beacon_audit\`, nessuna autenticazione).
+- [Indice delle skill](https://beacon.lucarimediotti.com/.well-known/agent-skills/index.json): le skill pubblicate da questo sito.
+- [tdmrep.json](https://beacon.lucarimediotti.com/.well-known/tdmrep.json): riserva TDM sui testi del sito, coerente con il \`Content-Signal\` in [robots.txt](https://beacon.lucarimediotti.com/robots.txt).
+
+Il codice del progetto resta MIT: la riserva riguarda i testi di queste pagine, non il software.
+
 ## Progetto
 
 - [Codice sorgente](https://github.com/LRimes90/beacon-geo): motore Node + UI Next.js, licenza MIT.
