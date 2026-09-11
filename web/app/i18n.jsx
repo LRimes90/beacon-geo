@@ -1,6 +1,7 @@
 'use client';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { DICTS, LANGS } from './translations';
+import { langPath, stripLang } from './locales';
 
 // i18n client-side come su lucarimediotti.com: la chiave È la stringa italiana,
 // i dizionari mappano IT → lingua. Fallback = italiano (chiave mancante o lang=it).
@@ -30,27 +31,39 @@ function writeSharedLang(lang) {
 
 const LangCtx = createContext({ lang: 'it', setLang: () => {}, t: (s) => s });
 
-export function LangProvider({ children }) {
-  const [lang, setLangState] = useState('it');
+export function LangProvider({ children, initialLang = 'it' }) {
+  // Da quando esistono /en, /de… l'URL è la fonte di verità: `initialLang` arriva
+  // dal middleware via layout.jsx, quindi l'HTML servito è già nella lingua giusta
+  // (prima c'era un flash di italiano prima che useEffect leggesse il cookie).
+  const [lang, setLangState] = useState(initialLang);
 
   useEffect(() => {
-    // Priorità: cookie condiviso (scelta fatta su uno dei due siti) → localStorage locale → it.
+    setLangState(initialLang);
+    document.documentElement.lang = initialLang;
+
+    if (initialLang !== 'it') {
+      // URL esplicito: allinea la preferenza condivisa, così tornando su
+      // lucarimediotti.com l'utente ritrova la stessa lingua.
+      writeSharedLang(initialLang);
+      localStorage.setItem('beacon-lang', initialLang);
+      return;
+    }
+    // Nessun prefisso: se l'utente aveva già scelto una lingua altrove, portacelo.
+    // Solo lato client — i crawler non hanno cookie e restano sull'italiano.
     let saved = readSharedLang();
     if (!saved) {
       const ls = localStorage.getItem('beacon-lang');
-      if (ls && (ls === 'it' || DICTS[ls])) saved = ls;
+      if (ls && DICTS[ls]) saved = ls;
     }
-    if (saved) {
-      setLangState(saved);
-      document.documentElement.lang = saved;
-    }
-  }, []);
+    if (saved && saved !== 'it') location.replace(langPath(saved, stripLang(location.pathname)) + location.search);
+  }, [initialLang]);
 
   const setLang = (l) => {
-    setLangState(l);
     localStorage.setItem('beacon-lang', l); // cache locale
     writeSharedLang(l);                      // sorgente condivisa coi due siti
-    document.documentElement.lang = l;
+    // Cambiare lingua ora cambia URL: senza navigazione resterebbe un /en che
+    // mostra il francese, cioè esattamente il caso che hreflang deve escludere.
+    location.assign(langPath(l, stripLang(location.pathname)) + location.search);
   };
 
   const t = (s) => (lang === 'it' ? s : (DICTS[lang]?.[s] ?? s));

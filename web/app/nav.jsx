@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useLang } from './i18n';
 import { LANGS } from './translations';
+import { langPath } from './locales';
 
 // Menu condiviso dei tool Beacon. Aggiungere un tool = una riga in TOOLS.
 const TOOLS = [
@@ -26,13 +27,13 @@ export default function ToolNav({ active, tag }) {
   return (
     <header className={cls}>
       <div className="bar-in">
-        <a className="brand" href="/" style={{ textDecoration: 'none' }}>
+        <a className="brand" href={langPath(lang, '/')} style={{ textDecoration: 'none' }}>
           <span className="dot" />Beacon{tag && <span className="tag">{t(tag)}</span>}
         </a>
 
         <nav className="toolmenu" aria-label={t('Strumenti Beacon')}>
           {TOOLS.map((tool) => (
-            <a key={tool.key} href={tool.href}
+            <a key={tool.key} href={langPath(lang, tool.href)}
                className={'toollink' + (tool.key === active ? ' on' : '')}
                aria-current={tool.key === active ? 'page' : undefined}
                onClick={() => setMenuOpen(false)}>{t(tool.label)}</a>

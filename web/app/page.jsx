@@ -91,13 +91,13 @@ export default function Home() {
       <ToolNav active="geo" tag="AI-readiness" />
 
       <main className="wrap">
-        <div className="hero">
+        <header className="hero">
           {/* Ritorno al sito principale — prima del kicker, come richiesto */}
           <a className="back-home" href="https://lucarimediotti.com">&larr; {t('Torna a lucarimediotti.com')}</a>
           <div className="kicker">GEO · Generative Engine Optimization</div>
           <h1><Rich s="Le AI *leggono* il tuo sito?" /></h1>
           <p className="lede">{t("Inserisci l'indirizzo: in un attimo scopri cosa trovano i crawler AI, cosa gli sfugge e da dove partire per migliorare.")}</p>
-        </div>
+        </header>
 
         <form onSubmit={run} id="analizza">
           <input type="text" placeholder={t('iltuosito.it')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito')} />
@@ -110,7 +110,7 @@ export default function Home() {
 
         {res && (
           <section className="result">
-            <div className="rhead">
+            <header className="rhead">
               <Gauge score={res.overall} />
               <div className="rmeta">
                 <div className="host">{res.url}</div>
@@ -118,18 +118,18 @@ export default function Home() {
                 <div className="sub">{res.render?.ok ? t('analisi con rendering JS') : t('analisi HTML servito (no-JS)')}</div>
                 <button type="button" className="dl" onClick={downloadLlms}>⬇ {t('Genera il tuo llms.txt')}</button>
               </div>
-            </div>
+            </header>
 
             {res.notice && (
-              <div className={'notice ' + res.notice.type}>
+              <aside className={'notice ' + res.notice.type}>
                 <span>{res.notice.msg}</span>
                 {res.notice.type === 'maybe-spa' && !res.render?.ok && (
                   <button type="button" className="retry" onClick={retryJs} disabled={loading}>{t('Riprova con rendering JS')}</button>
                 )}
-              </div>
+              </aside>
             )}
 
-            <div className="cats">
+            <section className="cats">
               {Object.entries(LABELS).map(([k, label]) => {
                 const s = res.categories[k].score;
                 return (
@@ -139,35 +139,35 @@ export default function Home() {
                   </div>
                 );
               })}
-            </div>
+            </section>
 
             {res.tech && (
-              <div className="rights">
+              <section className="rights">
                 <div className="rt">{t('Fondamentali tecnici')} <span className="info">— {t('informativo, non incide sul punteggio')}</span></div>
                 <ul>
                   {res.tech.checks.map((c, i) => (
                     <li key={i}><span className={c.status === 'good' ? 'pin' : c.status === 'crit' ? 'pc' : 'pn'}>{c.status === 'good' ? '✓' : c.status === 'crit' ? '✕' : '○'}</span> {c.name} — {c.detail}</li>
                   ))}
                 </ul>
-              </div>
+              </section>
             )}
 
             {res.rights && (
-              <div className="rights">
+              <section className="rights">
                 <div className="rt">{t('Segnali e diritti AI')} <span className="info">— {t('informativo, non incide sul punteggio')}</span></div>
                 <ul>
                   {res.rights.checks.map((c, i) => (
                     <li key={i}><span className={c.status === 'good' ? 'pin' : 'pn'}>{c.status === 'good' ? '✓' : '○'}</span> {c.name} — {c.detail}</li>
                   ))}
                 </ul>
-              </div>
+              </section>
             )}
 
             {fixes.length > 0 && (
-              <div className="fixes">
+              <section className="fixes">
                 <h3>{t('Azioni consigliate')}</h3>
                 <ul>{fixes.slice(0, 8).map((f, i) => <li key={i}>{f}</li>)}</ul>
-              </div>
+              </section>
             )}
           </section>
         )}
@@ -177,13 +177,13 @@ export default function Home() {
           <p className="fintro">{t("Cinque categorie fanno il punteggio; le ultime due sono controlli informativi. Tutto misurato sull'HTML servito — senza fidarci solo di ciò che il sito dichiara.")}</p>
           <div className="speclist">
             {FEATURES.map((f) => (
-              <div className={'specrow' + (f.info ? ' info' : '')} key={f.t}>
+              <article className={'specrow' + (f.info ? ' info' : '')} key={f.t}>
                 <div className="spec-h">
                   <span className="ic"><Icon k={f.k} /></span>
                   <h3>{t(f.t)}{f.info && <span className="badge" aria-hidden="true">info</span>}</h3>
                 </div>
                 <p>{t(f.d)}</p>
-              </div>
+              </article>
             ))}
           </div>
         </section>
