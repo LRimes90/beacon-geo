@@ -24,9 +24,12 @@ export const en = {
   'notice.maybeSpa': 'The page serves very little HTML: it probably loads its content via JavaScript. Try again with JS rendering for an accurate analysis.',
 
   // ---- ① Accesso AI ----
-  'access.robots.name': 'AI crawlers allowed (robots.txt)',
-  'access.robots.detail': '{allowed}/{total} AI crawlers allowed',
-  'access.robots.fix': 'Remove the Disallow rules blocking GPTBot/ClaudeBot/PerplexityBot etc. from robots.txt',
+  'access.retrieval.name': 'Live retrieval crawlers allowed',
+  'access.retrieval.detail': '{allowed}/{total} allowed in robots.txt (blocked: {blocked})',
+  'access.retrieval.fix': 'Allow OAI-SearchBot, ChatGPT-User, Claude-User and PerplexityBot: they are the ones that read the page when a user asks about you',
+  'access.training.name': 'Training crawlers allowed',
+  'access.training.detail': '{allowed}/{total} allowed in robots.txt',
+  'access.training.note': 'blocking them is a legitimate choice and does not reduce today\'s citations: the training archives are already collected. Google-Extended only excludes Gemini and Vertex AI training, it does not affect ranking or AI Overviews',
   'access.live.name': 'Live reachability (impersonated fetch)',
   'access.live.detail': '{ok}/{total} user agents received the page',
   'access.live.fix': 'Remove server-side/WAF/Cloudflare blocks on AI user agents',

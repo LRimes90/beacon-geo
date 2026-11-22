@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
+import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
@@ -322,6 +322,38 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     liveFetch: { GPTBot: { ok: true }, ClaudeBot: { ok: false } },
   });
   ok(acc.score > 0 && acc.score <= 100, 'access score nel range: ' + acc.score);
+}
+// access: la separazione fra training e retrieval è una tassonomia, se un bot nuovo
+// entra in AI_CRAWLERS senza essere classificato, il report mente per omissione.
+{
+  const uniti = [...TRAINING_CRAWLERS, ...RETRIEVAL_CRAWLERS];
+  const orfani = AI_CRAWLERS.filter((ua) => !uniti.includes(ua));
+  ok(orfani.length === 0, 'access: ogni crawler è classificato training o retrieval (orfani: ' + orfani.join(', ') + ')');
+  const doppi = uniti.filter((ua) => TRAINING_CRAWLERS.includes(ua) && RETRIEVAL_CRAWLERS.includes(ua));
+  ok(doppi.length === 0, 'access: nessun crawler in entrambi i gruppi (' + doppi.join(', ') + ')');
+  ok(RETRIEVAL_CRAWLERS.includes('OAI-SearchBot') && RETRIEVAL_CRAWLERS.includes('PerplexityBot'), 'access: i bot di retrieval live sono nel gruppo giusto');
+  ok(TRAINING_CRAWLERS.includes('GPTBot') && TRAINING_CRAWLERS.includes('Google-Extended'), 'access: i bot di training sono nel gruppo giusto');
+}
+{
+  // Bloccare solo il training pesa poco; bloccare il retrieval pesa molto.
+  const tutti = {}; for (const ua of AI_CRAWLERS) tutti[ua] = true;
+  const soloTraining = { ...tutti }; for (const ua of TRAINING_CRAWLERS) soloTraining[ua] = false;
+  const soloRetrieval = { ...tutti }; for (const ua of RETRIEVAL_CRAWLERS) soloRetrieval[ua] = false;
+  const live = {}; for (const ua of LIVE_UA) live[ua] = { ok: true };
+
+  const aT = analyzeAccess({ robotsAllowed: soloTraining, liveFetch: live });
+  const aR = analyzeAccess({ robotsAllowed: soloRetrieval, liveFetch: live });
+  ok(aR.score < aT.score, 'access: bloccare il retrieval live costa più che bloccare il training (' + aR.score + ' < ' + aT.score + ')');
+  ok(aT.checks.length === 3, 'access: tre check, training, retrieval, fetch live');
+  const tr = aT.checks.find((c) => c.name.toLowerCase().includes('training'));
+  ok(tr && /archivi|già raccolt/i.test(tr.detail), 'access: il check training spiega che il blocco non riduce le citazioni di oggi');
+  ok(!tr.fix, 'access: nessun fix che chiede di aprire i bot di training, è una scelta del sito');
+
+  // liveFetch pesa più del robots: un WAF che blocca tutto affonda il punteggio
+  // anche con un robots.txt perfetto.
+  const liveKo = {}; for (const ua of LIVE_UA) liveKo[ua] = { ok: false };
+  const aperto = analyzeAccess({ robotsAllowed: tutti, liveFetch: liveKo });
+  ok(aperto.score <= 55, 'access: robots aperto ma WAF che blocca → punteggio basso: ' + aperto.score);
 }
 {
   // agentFiles: il punteggio sta su robots.txt e sitemap (scopribilità reale).
@@ -707,7 +739,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const { msg, normalizeLang, ENGINE_LANGS } = await import('./src/messages/index.js');
   ok(ENGINE_LANGS.length === 6 && normalizeLang('de') === 'de' && normalizeLang('xx') === 'it' && normalizeLang(undefined) === 'it', 'i18n: whitelist lingue (valore ignoto → it)');
   ok(msg('en', 'verdict.good') === 'Good' && msg('it', 'verdict.good') === 'Buono', 'i18n: dizionario en compilato');
-  ok(msg('en', 'access.robots.detail', { allowed: 3, total: 5 }) === '3/5 AI crawlers allowed', 'i18n: interpolazione {parametri}');
+  ok(msg('en', 'access.training.detail', { allowed: 3, total: 5 }) === '3/5 allowed in robots.txt', 'i18n: interpolazione {parametri}');
   ok(msg('de', 'verdict.good') === 'Gut', 'i18n: dizionario de compilato');
   ok(msg('xx', 'verdict.good') === 'Buono' && msg('it', 'chiave.inesistente') === 'chiave.inesistente', 'i18n: lingua ignota → italiano; chiave ignota → chiave');
 

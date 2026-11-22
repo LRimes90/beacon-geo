@@ -15,6 +15,22 @@ export const AI_CRAWLERS = [
 // Sottoinsieme per il fetch live (impersonazione reale — teniamolo piccolo per non essere invasivi).
 export const LIVE_UA = ['GPTBot', 'ClaudeBot', 'PerplexityBot', 'Googlebot', 'CCBot'];
 
+// Le due famiglie hanno conseguenze opposte e il report deve dirlo.
+// Training: alimentano i modelli. Bloccarli NON riduce le citazioni di oggi:
+// gli archivi sono già raccolti e il training è retroattivo.
+// Retrieval live: leggono la pagina nel momento in cui un utente fa la domanda.
+// Bloccarli significa non essere citabili in tempo reale (BuzzStream, 4M citazioni).
+// L'unione deve coprire AI_CRAWLERS: un bot non classificato è un report che mente
+// per omissione (invariante verificata in test.js).
+export const TRAINING_CRAWLERS = [
+  'GPTBot', 'ClaudeBot', 'anthropic-ai', 'Google-Extended', 'CCBot',
+  'Bytespider', 'cohere-ai', 'Meta-ExternalAgent', 'Amazonbot',
+];
+export const RETRIEVAL_CRAWLERS = [
+  'OAI-SearchBot', 'ChatGPT-User', 'Claude-User', 'PerplexityBot', 'Googlebot',
+  'Bingbot', 'Applebot', 'DuckAssistBot', 'YouBot', 'MistralAI-User',
+];
+
 // Normalizza l'indirizzo digitato dall'utente: aggiunge lo schema se manca e
 // controlla che sia parsabile. Prima questa logica era ripetuta in quattro
 // orchestratori e `new URL` lanciava un `TypeError: Invalid URL` che le route

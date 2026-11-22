@@ -4,27 +4,47 @@
 // status: 'good' | 'warn' | 'crit' | 'info'
 // i18n: ogni analyzer accetta `lang` (default 'it') e legge le stringhe dal
 // catalogo src/messages/ — la logica di punteggio resta identica.
-import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links, sections, extractableBlocks, paragraphWords, citableEvidence, htmlLang, stripTags, contentWords } from './lib.js';
+import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links, sections, extractableBlocks, paragraphWords, citableEvidence, htmlLang, stripTags, contentWords, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS } from './lib.js';
 import { makeT } from './messages/index.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 const pct = (a, b) => (b ? (a / b) * 100 : 0);
 
-// ① ACCESSO AI — quota di crawler ammessi dal robots.txt + che raggiungono la pagina live.
+// ① ACCESSO AI — chi può leggere il sito, distinguendo il training dal retrieval live.
+// Il fetch live pesa più del robots.txt: misurato su 4M citazioni (BuzzStream), il 95%
+// delle pagine citate bloccava GPTBot nel robots: la riga di testo conta meno di
+// quello che il server fa davvero quando un user-agent AI chiede la pagina.
 export function analyzeAccess({ robotsAllowed, liveFetch }, lang = 'it') {
   const t = makeT(lang);
-  const total = Object.keys(robotsAllowed).length || 1;
-  const allowed = Object.values(robotsAllowed).filter(Boolean).length;
+  const groupStats = (list) => {
+    const present = list.filter((ua) => ua in robotsAllowed);
+    const allowed = present.filter((ua) => robotsAllowed[ua]);
+    return { allowed: allowed.length, total: present.length || 1, blocked: present.filter((ua) => !robotsAllowed[ua]) };
+  };
+  const train = groupStats(TRAINING_CRAWLERS);
+  const retr = groupStats(RETRIEVAL_CRAWLERS);
   const liveTotal = Object.keys(liveFetch).length || 1;
   const liveOk = Object.values(liveFetch).filter((r) => r.ok).length;
-  const score = clamp(0.6 * pct(allowed, total) + 0.4 * pct(liveOk, liveTotal));
+
+  // 45 fetch live + 35 retrieval + 20 training: il peso segue la conseguenza.
+  const score = clamp(
+    0.45 * pct(liveOk, liveTotal) +
+    0.35 * pct(retr.allowed, retr.total) +
+    0.20 * pct(train.allowed, train.total)
+  );
   const st = (p) => (p >= 0.9 ? 'good' : p >= 0.5 ? 'warn' : 'crit');
+  const names = (l) => (l.length ? l.slice(0, 4).join(', ') + (l.length > 4 ? '…' : '') : '—');
+
   return {
     score,
     checks: [
-      { name: t('access.robots.name'), status: st(allowed / total),
-        detail: t('access.robots.detail', { allowed, total }),
-        fix: allowed < total ? t('access.robots.fix') : null },
+      { name: t('access.retrieval.name'), status: st(retr.allowed / retr.total),
+        detail: t('access.retrieval.detail', { allowed: retr.allowed, total: retr.total, blocked: names(retr.blocked) }),
+        fix: retr.allowed < retr.total ? t('access.retrieval.fix') : null },
+      // Nessun fix: aprire i bot di training è una scelta legittima del sito, non un
+      // difetto da correggere. Il check dice solo che cosa comporta davvero.
+      { name: t('access.training.name'), status: 'info',
+        detail: t('access.training.detail', { allowed: train.allowed, total: train.total }) + ' — ' + t('access.training.note') },
       { name: t('access.live.name'), status: st(liveOk / liveTotal),
         detail: t('access.live.detail', { ok: liveOk, total: liveTotal }),
         fix: liveOk < liveTotal ? t('access.live.fix') : null },
