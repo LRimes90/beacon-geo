@@ -32,13 +32,13 @@ export const en = {
   'access.live.fix': 'Remove server-side/WAF/Cloudflare blocks on AI user agents',
 
   // ---- ② File per agenti e AI ----
-  'agentFiles.base.name': 'Base files (robots, sitemap, llms.txt)',
-  'agentFiles.base.detail': '{have}/3 present',
-  'agentFiles.base.missingLlms': ' — llms.txt missing',
-  'agentFiles.base.fix': 'Generate and publish /llms.txt (use: beacon <url> --llms)',
-  'agentFiles.emerging.name': 'Emerging agentic standards',
-  'agentFiles.emerging.detail': '{have}/3 (skill.md, .well-known/mcp.json, agent-skills)',
-  'agentFiles.emerging.fix': 'Opportunity: add skill.md and .well-known/mcp.json to be readable by agents',
+  'agentFiles.base.name': 'Discoverability files (robots.txt, sitemap.xml)',
+  'agentFiles.base.detail': '{have}/2 present',
+  'agentFiles.base.fix': 'Publish sitemap.xml and declare it in robots.txt: this is how retrieval crawlers discover your URLs',
+  'agentFiles.llms.name': 'llms.txt (convention, not a standard)',
+  'agentFiles.llms.detail.ok': 'present',
+  'agentFiles.llms.detail.none': 'missing',
+  'agentFiles.llms.note': 'does not affect the score: across 137,210 measured domains, 97% of llms.txt files are never read. Useful as an index for coding assistants, not for citations',
 
   // ---- ③ Dati strutturati e SEO ----
   'structured.meta.name': 'Title & meta description',

@@ -32,25 +32,29 @@ export function analyzeAccess({ robotsAllowed, liveFetch }, lang = 'it') {
   };
 }
 
-// ② FILE PER AGENTI E AI — file base + standard emergenti.
+// ② FILE PER AGENTI E AI — scopribilità reale, non file di moda.
+// Il punteggio sta su robots.txt e sitemap.xml: sono i due file che i crawler di
+// retrieval usano davvero per scoprire le URL (ed è la base di IndexNow per
+// Bing/Copilot). llms.txt resta visibile come check informativo: misurato su
+// 137.210 domini con traffico reale, il 97% dei file non viene mai letto (Ahrefs);
+// SE Ranking, ~300.000 domini: zero correlazione con le citazioni; Google dichiara
+// di non leggerlo. Otterly l'ha rimosso dal proprio audit dopo aver analizzato
+// milioni di citazioni. Le convenzioni di fatto (skill.md, .well-known/mcp.json,
+// agent-skills) sono in analyzeAgentReady, dove non contano per il voto.
 export function analyzeAgentFiles(files, lang = 'it') {
   const t = makeT(lang);
-  // files: { robotsTxt, sitemap, llmsTxt, skillMd, mcpJson, agentSkills } (bool)
-  const base = ['robotsTxt', 'sitemap', 'llmsTxt'];
-  const emerging = ['skillMd', 'mcpJson', 'agentSkills'];
+  const base = ['robotsTxt', 'sitemap'];
   const baseHave = base.filter((k) => files[k]).length;
-  const emHave = emerging.filter((k) => files[k]).length;
-  // Base pesa 70, emergenti 30 (bonus: sei in anticipo sulla concorrenza).
-  const score = clamp(0.7 * pct(baseHave, base.length) + 0.3 * pct(emHave, emerging.length));
+  const score = clamp(pct(baseHave, base.length));
   return {
     score,
     checks: [
-      { name: t('agentFiles.base.name'), status: baseHave === 3 ? 'good' : baseHave >= 2 ? 'warn' : 'crit',
-        detail: t('agentFiles.base.detail', { have: baseHave }) + (!files.llmsTxt ? t('agentFiles.base.missingLlms') : ''),
-        fix: !files.llmsTxt ? t('agentFiles.base.fix') : null },
-      { name: t('agentFiles.emerging.name'), status: emHave ? 'good' : 'info',
-        detail: t('agentFiles.emerging.detail', { have: emHave }),
-        fix: emHave === 0 ? t('agentFiles.emerging.fix') : null },
+      { name: t('agentFiles.base.name'), status: baseHave === 2 ? 'good' : baseHave === 1 ? 'warn' : 'crit',
+        detail: t('agentFiles.base.detail', { have: baseHave }),
+        fix: baseHave < 2 ? t('agentFiles.base.fix') : null },
+      // Informativo dentro una categoria pesata: compare nell'elenco, non nello score.
+      { name: t('agentFiles.llms.name'), status: 'info',
+        detail: (files.llmsTxt ? t('agentFiles.llms.detail.ok') : t('agentFiles.llms.detail.none')) + ' — ' + t('agentFiles.llms.note') },
     ],
   };
 }

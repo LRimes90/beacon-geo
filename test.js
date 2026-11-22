@@ -324,10 +324,20 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(acc.score > 0 && acc.score <= 100, 'access score nel range: ' + acc.score);
 }
 {
-  const af = analyzeAgentFiles({ robotsTxt: true, sitemap: true, llmsTxt: false, skillMd: false, mcpJson: false, agentSkills: false });
-  ok(af.score < 100 && af.score > 0, 'agentFiles penalizza llms.txt mancante: ' + af.score);
-  const full = analyzeAgentFiles({ robotsTxt: true, sitemap: true, llmsTxt: true, skillMd: true, mcpJson: true, agentSkills: true });
-  ok(full.score === 100, 'tutti i file → 100: ' + full.score);
+  // agentFiles: il punteggio sta su robots.txt e sitemap (scopribilità reale).
+  // llms.txt compare come check ma NON contribuisce: misurato su 137.210 domini,
+  // il 97% dei file non viene mai letto (Ahrefs).
+  const senzaLlms = analyzeAgentFiles({ robotsTxt: true, sitemap: true, llmsTxt: false, skillMd: false, mcpJson: false, agentSkills: false });
+  ok(senzaLlms.score === 100, 'agentFiles: robots + sitemap = 100 anche senza llms.txt (avuto ' + senzaLlms.score + ')');
+  const conLlms = analyzeAgentFiles({ robotsTxt: true, sitemap: true, llmsTxt: true, skillMd: false, mcpJson: false, agentSkills: false });
+  ok(conLlms.score === senzaLlms.score, 'agentFiles: llms.txt non muove il punteggio');
+  const llmsCheck = conLlms.checks.find((c) => c.name.includes('llms.txt'));
+  ok(llmsCheck && llmsCheck.status === 'info', 'agentFiles: llms.txt è un check informativo');
+  ok(llmsCheck && !llmsCheck.fix, 'agentFiles: nessun fix che promette citazioni per llms.txt');
+  ok(/97%|non viene mai letto/i.test(llmsCheck.detail), 'agentFiles: il dettaglio dichiara l\'uso reale del file');
+  const nudo = analyzeAgentFiles({ robotsTxt: false, sitemap: false, llmsTxt: true, skillMd: true, mcpJson: true, agentSkills: true });
+  ok(nudo.score === 0, 'agentFiles: senza robots né sitemap il punteggio è 0 anche con tutti i file di moda: ' + nudo.score);
+  ok(conLlms.checks.length === 2, 'agentFiles: due check, le convenzioni si sono spostate in agentReady');
 }
 {
   const rd = analyzeReadability({ served: '<div>' + 'parola '.repeat(400) + '</div>', rendered: '<div>' + 'parola '.repeat(1000) + '</div>' });
