@@ -14,6 +14,22 @@ Nato come replica migliorata di [Pharos](https://pharos.verso.solutions) (GEO / 
 
 I punteggi **non si sommano**: misurano dimensioni diverse, quindi restano affiancati.
 
+## Categorie GEO e pesi (profilo EVIDENCE-2026)
+Il punteggio GEO somma sei categorie pesate. I pesi seguono l'evidenza empirica 2025-2026, non la replica di un altro strumento (dettaglio e profili storici in `weights.json`).
+
+| Categoria | Peso | Fonte |
+|---|---|---|
+| `answerability` (risposta pronta per le AI) | 0.25 | tabelle e liste citate 2,5x; GEO paper KDD 2024, +40% |
+| `readability` (leggibilità macchina) | 0.22 | Vercel/MERJ, 500M fetch di GPTBot: nessun JavaScript eseguito |
+| `access` (accesso AI) | 0.18 | BuzzStream: il 95% delle pagine citate bloccava GPTBot nel robots, quindi il fetch live pesa più del robots.txt |
+| `structured` (dati strutturati e SEO) | 0.15 | Ahrefs: JSON-LD a -4,6% sugli AI Overviews |
+| `offsite` (menzioni fuori sito) | 0.15 | Ahrefs, 75k brand: menzioni r=0.664; peso contenuto perché CCBot e Common Crawl sono un proxy debole |
+| `agentFiles` (scopribilità: robots.txt, sitemap) | 0.05 | Ahrefs, 137k domini: il 97% dei file llms.txt non viene mai letto |
+
+Tre categorie sono solo informative e non entrano nel voto: `agentReady` (standard d'avanguardia come skill.md, MCP, WebMCP, Web Bot Auth), `rights` (segnali di uso dei contenuti) e `tech`.
+
+`agentFiles` è scesa a 0.05 perché llms.txt valeva ~23 punti su 100 della categoria: il 4,6% del voto finale dipendeva da un file che quasi nessuno legge. Ora il punteggio sta su robots.txt e sitemap.xml; llms.txt resta un check informativo (vedi `weights.json`). In `access`, i crawler di training e quelli di retrieval live sono distinti: bloccare i primi non riduce le citazioni di oggi, bloccare i secondi sì. Se il profilo pesi cambia fra due scansioni, lo storico sospende il delta GEO (`src/history.js`).
+
 ## Web UI
 ```bash
 cd web
@@ -31,7 +47,7 @@ node crawl.js stripe.com [--max 8]  # punteggio di SITO (multi-pagina)
 node batch.js [urls...]             # analisi parallela multi-sito
 node compare.js tuosito.com c1.com c2.com  # confronto competitor (GEO+a11y+perf, primo = riferimento) → beacon-compare.html
 node aiact.js tuosito.ch [--json] [--lang=en]  # segnali di trasparenza AI Act in pagina
-node test.js                        # 365 assert sulle funzioni pure
+node test.js                        # 469 assert sulle funzioni pure
 ```
 
 ## Come funziona l'accessibilità
@@ -90,11 +106,11 @@ src/llmstxt.js     generatore llms.txt
 src/report.js      export GEO Markdown/HTML
 src/guard.js       rate-limit per-IP + verifica Turnstile (inerti senza env)
 weights.json       pesi categorie GEO
-test.js            365 assert (no framework) — girano anche in CI
+test.js            469 assert (no framework) — girano anche in CI
 ```
 
 ## Test & CI
-`node test.js` → 365 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
+`node test.js` → 469 assert sulle funzioni pure (nessuna dipendenza richiesta). Una GitHub Action (`.github/workflows/test.yml`) li rilancia a ogni push.
 
 Due degli assert non sono casi scelti a mano: generano il **prodotto cartesiano** delle risposte del questionario AI Act (domande non risposte comprese) su due date e due esiti di scansione — ~525.000 combinazioni — e verificano invarianti che devono valere sempre: nessuna eccezione, nessuna chiave i18n non tradotta a schermo, un divieto dichiarato è sempre bloccante, fuori dall'ambito nessun obbligo dell'AI Act resta esigibile (`due` **né** `future`; la nLPD è l'eccezione dichiarata), `inForce` coerente con la data di riferimento, confidenza alta solo con copertura completa. È il check che ha trovato la scadenza `future` sopravvissuta al verdetto *fuori ambito*.
 

@@ -4,27 +4,47 @@
 // status: 'good' | 'warn' | 'crit' | 'info'
 // i18n: ogni analyzer accetta `lang` (default 'it') e legge le stringhe dal
 // catalogo src/messages/ — la logica di punteggio resta identica.
-import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links } from './lib.js';
+import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links, sections, extractableBlocks, paragraphWords, citableEvidence, htmlLang, stripTags, contentWords, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS } from './lib.js';
 import { makeT } from './messages/index.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 const pct = (a, b) => (b ? (a / b) * 100 : 0);
 
-// ① ACCESSO AI — quota di crawler ammessi dal robots.txt + che raggiungono la pagina live.
+// ① ACCESSO AI — chi può leggere il sito, distinguendo il training dal retrieval live.
+// Il fetch live pesa più del robots.txt: misurato su 4M citazioni (BuzzStream), il 95%
+// delle pagine citate bloccava GPTBot nel robots: la riga di testo conta meno di
+// quello che il server fa davvero quando un user-agent AI chiede la pagina.
 export function analyzeAccess({ robotsAllowed, liveFetch }, lang = 'it') {
   const t = makeT(lang);
-  const total = Object.keys(robotsAllowed).length || 1;
-  const allowed = Object.values(robotsAllowed).filter(Boolean).length;
+  const groupStats = (list) => {
+    const present = list.filter((ua) => ua in robotsAllowed);
+    const allowed = present.filter((ua) => robotsAllowed[ua]);
+    return { allowed: allowed.length, total: present.length || 1, blocked: present.filter((ua) => !robotsAllowed[ua]) };
+  };
+  const train = groupStats(TRAINING_CRAWLERS);
+  const retr = groupStats(RETRIEVAL_CRAWLERS);
   const liveTotal = Object.keys(liveFetch).length || 1;
   const liveOk = Object.values(liveFetch).filter((r) => r.ok).length;
-  const score = clamp(0.6 * pct(allowed, total) + 0.4 * pct(liveOk, liveTotal));
+
+  // 45 fetch live + 35 retrieval + 20 training: il peso segue la conseguenza.
+  const score = clamp(
+    0.45 * pct(liveOk, liveTotal) +
+    0.35 * pct(retr.allowed, retr.total) +
+    0.20 * pct(train.allowed, train.total)
+  );
   const st = (p) => (p >= 0.9 ? 'good' : p >= 0.5 ? 'warn' : 'crit');
+  const names = (l) => (l.length ? l.slice(0, 4).join(', ') + (l.length > 4 ? '…' : '') : '—');
+
   return {
     score,
     checks: [
-      { name: t('access.robots.name'), status: st(allowed / total),
-        detail: t('access.robots.detail', { allowed, total }),
-        fix: allowed < total ? t('access.robots.fix') : null },
+      { name: t('access.retrieval.name'), status: st(retr.allowed / retr.total),
+        detail: t('access.retrieval.detail', { allowed: retr.allowed, total: retr.total, blocked: names(retr.blocked) }),
+        fix: retr.allowed < retr.total ? t('access.retrieval.fix') : null },
+      // Nessun fix: aprire i bot di training è una scelta legittima del sito, non un
+      // difetto da correggere. Il check dice solo che cosa comporta davvero.
+      { name: t('access.training.name'), status: 'info',
+        detail: t('access.training.detail', { allowed: train.allowed, total: train.total }) + ' — ' + t('access.training.note') },
       { name: t('access.live.name'), status: st(liveOk / liveTotal),
         detail: t('access.live.detail', { ok: liveOk, total: liveTotal }),
         fix: liveOk < liveTotal ? t('access.live.fix') : null },
@@ -32,25 +52,29 @@ export function analyzeAccess({ robotsAllowed, liveFetch }, lang = 'it') {
   };
 }
 
-// ② FILE PER AGENTI E AI — file base + standard emergenti.
+// ② FILE PER AGENTI E AI — scopribilità reale, non file di moda.
+// Il punteggio sta su robots.txt e sitemap.xml: sono i due file che i crawler di
+// retrieval usano davvero per scoprire le URL (ed è la base di IndexNow per
+// Bing/Copilot). llms.txt resta visibile come check informativo: misurato su
+// 137.210 domini con traffico reale, il 97% dei file non viene mai letto (Ahrefs);
+// SE Ranking, ~300.000 domini: zero correlazione con le citazioni; Google dichiara
+// di non leggerlo. Otterly l'ha rimosso dal proprio audit dopo aver analizzato
+// milioni di citazioni. Le convenzioni di fatto (skill.md, .well-known/mcp.json,
+// agent-skills) sono in analyzeAgentReady, dove non contano per il voto.
 export function analyzeAgentFiles(files, lang = 'it') {
   const t = makeT(lang);
-  // files: { robotsTxt, sitemap, llmsTxt, skillMd, mcpJson, agentSkills } (bool)
-  const base = ['robotsTxt', 'sitemap', 'llmsTxt'];
-  const emerging = ['skillMd', 'mcpJson', 'agentSkills'];
+  const base = ['robotsTxt', 'sitemap'];
   const baseHave = base.filter((k) => files[k]).length;
-  const emHave = emerging.filter((k) => files[k]).length;
-  // Base pesa 70, emergenti 30 (bonus: sei in anticipo sulla concorrenza).
-  const score = clamp(0.7 * pct(baseHave, base.length) + 0.3 * pct(emHave, emerging.length));
+  const score = clamp(pct(baseHave, base.length));
   return {
     score,
     checks: [
-      { name: t('agentFiles.base.name'), status: baseHave === 3 ? 'good' : baseHave >= 2 ? 'warn' : 'crit',
-        detail: t('agentFiles.base.detail', { have: baseHave }) + (!files.llmsTxt ? t('agentFiles.base.missingLlms') : ''),
-        fix: !files.llmsTxt ? t('agentFiles.base.fix') : null },
-      { name: t('agentFiles.emerging.name'), status: emHave ? 'good' : 'info',
-        detail: t('agentFiles.emerging.detail', { have: emHave }),
-        fix: emHave === 0 ? t('agentFiles.emerging.fix') : null },
+      { name: t('agentFiles.base.name'), status: baseHave === 2 ? 'good' : baseHave === 1 ? 'warn' : 'crit',
+        detail: t('agentFiles.base.detail', { have: baseHave }),
+        fix: baseHave < 2 ? t('agentFiles.base.fix') : null },
+      // Informativo dentro una categoria pesata: compare nell'elenco, non nello score.
+      { name: t('agentFiles.llms.name'), status: 'info',
+        detail: (files.llmsTxt ? t('agentFiles.llms.detail.ok') : t('agentFiles.llms.detail.none')) + ' — ' + t('agentFiles.llms.note') },
     ],
   };
 }
@@ -151,6 +175,152 @@ function readabilityMetrics(html) {
   };
 }
 
+// ⑥ RISPOSTA PRONTA PER LE AI (answer-readiness) — il pilastro editoriale del GEO:
+// non «una macchina vede il testo» (readability) ma «il testo risponde a una domanda
+// in una forma estraibile e citabile». Base empirica dei pesi in weights.json.
+
+// Parole interrogative per lingua. Sono DATI, non stringhe di interfaccia: stanno qui
+// e non in src/messages/, che è il catalogo dei testi mostrati all'utente.
+// Solo forme non ambigue a inizio titolo: 'o'/'que'/'is' da soli darebbero falsi
+// positivi su qualsiasi titolo che inizia con un articolo, quindi si usano i bigrammi.
+export const QUESTION_WORDS = {
+  it: ['come', 'cosa', 'cos\'è', 'perché', 'perche', 'quando', 'quanto', 'quanta', 'quanti', 'quante', 'quale', 'quali', 'chi', 'dove', 'che cos'],
+  en: ['how', 'what', 'why', 'when', 'where', 'who', 'which', 'can i', 'can you', 'do i', 'does it', 'is it', 'should i'],
+  de: ['wie', 'was', 'warum', 'wann', 'wo', 'wer', 'welche', 'welcher', 'welches', 'wieso', 'weshalb'],
+  fr: ['comment', 'pourquoi', 'quand', 'où', 'qui', 'quel', 'quelle', 'quels', 'quelles', 'combien', 'qu\'est-ce'],
+  es: ['cómo', 'como', 'por qué', 'por que', 'cuándo', 'cuando', 'dónde', 'donde', 'quién', 'quien', 'cuál', 'cual', 'cuánto', 'cuanto', 'qué es'],
+  pt: ['como', 'por que', 'porquê', 'quando', 'onde', 'quem', 'qual', 'quais', 'quanto', 'quantos', 'o que'],
+};
+
+// Stopword ad alta frequenza per il fallback di lingua. ponytail: euristica a
+// conteggio, non un identificatore statistico — basta a distinguere sei lingue
+// europee su una pagina intera; un langid vero è la via d'uscita se serve di più.
+const LANG_HINTS = {
+  it: [' il ', ' la ', ' che ', ' di ', ' non ', ' per ', ' una '],
+  en: [' the ', ' and ', ' of ', ' to ', ' is ', ' that ', ' with '],
+  de: [' der ', ' die ', ' das ', ' und ', ' ist ', ' nicht ', ' für '],
+  fr: [' le ', ' la ', ' les ', ' des ', ' est ', ' pour ', ' que '],
+  es: [' el ', ' la ', ' los ', ' que ', ' de ', ' para ', ' con '],
+  pt: [' o ', ' os ', ' que ', ' de ', ' para ', ' com ', ' não '],
+};
+
+// Lingua della PAGINA: <html lang> se c'è, altrimenti la lingua le cui stopword
+// compaiono più spesso nel testo. Il `lang` del report non decide: un sito italiano
+// analizzato con report in inglese va valutato con le parole interrogative italiane.
+export function pageLang(html, fallback = 'it') {
+  const declared = htmlLang(html);
+  if (declared && QUESTION_WORDS[declared]) return declared;
+  const text = (' ' + stripTags(html).toLowerCase() + ' ');
+  let best = null, bestScore = 0;
+  for (const [lang, hints] of Object.entries(LANG_HINTS)) {
+    const n = hints.reduce((a, h) => a + (text.split(h).length - 1), 0);
+    if (n > bestScore) { bestScore = n; best = lang; }
+  }
+  return bestScore >= 3 && best ? best : fallback;
+}
+
+// Titoli di menu comunissimi ("Chi siamo", "Quem somos") che iniziano come una parola
+// interrogativa ma sono un titolo in terza persona plurale, non una domanda — falso
+// positivo trovato in review 1 su una pagina aziendale reale. Frasi intere, non parole:
+// "Come raggiungerci" resta escluso ma "Come funziona" (vera domanda) resta riconosciuto.
+const NON_QUESTION_HEADINGS = {
+  it: ['chi siamo', 'dove siamo', 'come raggiungerci'],
+  pt: ['quem somos'],
+};
+
+// Un titolo è in forma di domanda se finisce con "?" o se inizia con una parola
+// interrogativa della lingua della pagina, confrontata su parola intera.
+export function isQuestionHeading(text, lang = 'it') {
+  const s = String(text || '').trim().toLowerCase();
+  if (!s) return false;
+  if ((NON_QUESTION_HEADINGS[lang] || []).includes(s)) return false;
+  if (s.endsWith('?')) return true;
+  const words = QUESTION_WORDS[lang] || QUESTION_WORDS.it;
+  return words.some((w) => s === w || s.startsWith(w + ' ') || s.startsWith(w + '\''));
+}
+
+const MIN_WORDS_ANSWERABILITY = 300;
+
+export function analyzeAnswerability({ served, host }, lang = 'it') {
+  const t = makeT(lang);
+  // contentWords, non wordCount: il gate delle 300 e il denominatore /500 devono
+  // girare sul contenuto reale, non su menu/testata/footer (review 1, finding critico).
+  const words = contentWords(served || '');
+
+  // Sotto le 300 parole non c'è contenuto da giudicare: home vetrina, listing,
+  // pagina contatti. `unmeasured` esce dalla media pesata (vedi audit.js) — stesso
+  // meccanismo già usato da analyzeOffsite quando Common Crawl non risponde:
+  // «non ho i presupposti per giudicare» ≠ «il sito è fatto male».
+  if (words < MIN_WORDS_ANSWERABILITY) {
+    return {
+      unmeasured: true,
+      score: 0,
+      checks: [{ name: t('answerability.unmeasured.name'), status: 'info', detail: t('answerability.unmeasured.detail', { words }) }],
+    };
+  }
+
+  const pLang = pageLang(served, lang);
+  const secs = sections(served);
+  const blocks = extractableBlocks(served);
+  const paras = paragraphWords(served);
+  const ev = citableEvidence(served, host);
+
+  // ① risposta diretta dopo l'heading (25). Mediana e non media: una sola sezione
+  // con un cappello lungo non deve affossare una pagina per il resto pulita.
+  // Con un numero pari di sezioni la mediana è la media dei due valori centrali
+  // (review 1: l'indice singolo dava il valore superiore, non la mediana vera).
+  const lens = secs.map((s) => s.firstSentenceWords).filter((n) => n > 0).sort((a, b) => a - b);
+  const mid = lens.length / 2;
+  const median = lens.length === 0 ? null
+    : lens.length % 2 === 1 ? lens[Math.floor(mid)]
+    : Math.round((lens[mid - 1] + lens[mid]) / 2);
+  const directPts = median === null ? 12 : median <= 30 ? 25 : median <= 50 ? 14 : 4;
+  const directStatus = median === null ? 'info' : median <= 30 ? 'good' : median <= 50 ? 'warn' : 'crit';
+
+  // ② blocchi estraibili (20): almeno uno ogni 500 parole.
+  const per500 = blocks.total / Math.max(1, words / 500);
+  const blocksPts = per500 >= 1 ? 20 : per500 >= 0.5 ? 11 : blocks.total ? 5 : 0;
+  const blocksStatus = per500 >= 1 ? 'good' : per500 >= 0.5 ? 'warn' : 'crit';
+
+  // ③ paragrafi digeribili (20): meno del 10% oltre le 120 parole.
+  const longRatio = paras.total ? paras.long / paras.total : 0;
+  const parasPts = !paras.total ? 8 : longRatio < 0.1 ? 20 : longRatio < 0.25 ? 11 : 3;
+  const parasStatus = !paras.total ? 'warn' : longRatio < 0.1 ? 'good' : longRatio < 0.25 ? 'warn' : 'crit';
+
+  // ④ titoli in forma di domanda (15): almeno un quarto degli H2/H3.
+  const qHave = secs.filter((s) => isQuestionHeading(s.heading, pLang)).length;
+  const qRatio = secs.length ? qHave / secs.length : 0;
+  const qPts = qRatio >= 0.25 ? 15 : qRatio >= 0.1 ? 8 : 0;
+  const qStatus = qRatio >= 0.25 ? 'good' : qRatio >= 0.1 ? 'warn' : secs.length ? 'crit' : 'info';
+
+  // ⑤ evidenza citabile (20): almeno tre elementi fra dati, citazioni e fonti.
+  const evPts = ev.total >= 3 ? 20 : ev.total >= 1 ? 10 : 0;
+  const evStatus = ev.total >= 3 ? 'good' : ev.total >= 1 ? 'warn' : 'crit';
+
+  const score = clamp(directPts + blocksPts + parasPts + qPts + evPts);
+
+  return {
+    score,
+    checks: [
+      { name: t('answerability.direct.name'), status: directStatus,
+        detail: t('answerability.direct.detail', { median: median === null ? '—' : median, sections: secs.length }),
+        fix: directStatus === 'good' || directStatus === 'info' ? null : t('answerability.direct.fix') },
+      { name: t('answerability.blocks.name'), status: blocksStatus,
+        detail: t('answerability.blocks.detail', { blocks: blocks.total, words, lists: blocks.lists, tables: blocks.tables }),
+        fix: blocksStatus === 'good' ? null : t('answerability.blocks.fix') },
+      { name: t('answerability.paras.name'), status: parasStatus,
+        detail: t('answerability.paras.detail', { long: paras.long, total: paras.total }),
+        fix: parasStatus === 'good' ? null : t('answerability.paras.fix') },
+      { name: t('answerability.questions.name'), status: qStatus,
+        detail: t('answerability.questions.detail', { have: qHave, total: secs.length, lang: pLang }),
+        fix: qStatus === 'good' || qStatus === 'info' ? null : t('answerability.questions.fix') },
+      { name: t('answerability.evidence.name'), status: evStatus,
+        detail: t('answerability.evidence.detail', { count: ev.total, numbers: ev.numbers, quotes: ev.quotes, links: ev.extLinks }),
+        fix: evStatus === 'good' ? null : t('answerability.evidence.fix') },
+    ],
+  };
+}
+
 // ⑤ VISIBILITÀ OFF-SITE — CCBot ammesso + presenza in Common Crawl (best-effort).
 export function analyzeOffsite({ ccbotAllowed, inCommonCrawl }, lang = 'it') {
   const t = makeT(lang);
@@ -185,7 +355,7 @@ export function categoryLabels(lang = 'it') {
   const t = makeT(lang);
   return {
     access: t('category.access'), agentFiles: t('category.agentFiles'), structured: t('category.structured'),
-    readability: t('category.readability'), offsite: t('category.offsite'),
+    readability: t('category.readability'), answerability: t('category.answerability'), offsite: t('category.offsite'),
   };
 }
 export const CATEGORY_LABELS = categoryLabels('it');
@@ -211,6 +381,73 @@ export function analyzeRights({ tdmrep, license, contentSignal }, lang = 'it') {
   };
 }
 export const RIGHTS_LABEL = 'Segnali e diritti AI';
+
+// ⑦ STANDARD D'AVANGUARDIA PER GLI AGENTI — informativo (NON pesato).
+// Informativo per scelta, non per prudenza: non esiste evidenza che questi segnali
+// correlino con le citazioni. Pesarli perché sono moderni ripeterebbe esattamente
+// l'errore di llms.txt (Ahrefs, 137.210 domini: il 97% dei file mai letto).
+
+// AIPREF (IETF AI Preferences WG): la preferenza può stare nell'header HTTP
+// Content-Usage o in una regola omonima del robots.txt. L'header ha precedenza.
+export function parseContentUsage(headerValue, robotsTxt) {
+  const h = headerValue && String(headerValue).trim();
+  if (h) return { source: 'header', raw: h };
+  const m = String(robotsTxt || '').match(/^\s*content-usage\s*:\s*(.+)$/im);
+  if (m) return { source: 'robots', raw: m[1].trim() };
+  return { source: null, raw: null };
+}
+
+// WebMCP (W3C Draft Community Group Report): si cerca la REGISTRAZIONE di un tool,
+// non la parola. `document.modelContext` è l'API corrente; `navigator.modelContext`
+// è deprecata da Chrome 150 e va segnalata come tale.
+// ponytail: rilevazione testuale sull'HTML renderizzato — non eseguiamo l'API.
+export function detectWebmcp(html) {
+  const s = String(html || '');
+  if (/document\s*\.\s*modelContext/.test(s)) return 'document.modelContext';
+  if (/navigator\s*\.\s*modelContext/.test(s)) return 'navigator.modelContext';
+  return null;
+}
+
+export function analyzeAgentReady({ contentUsage, botAuth, webmcp, conventions }, lang = 'it') {
+  const t = makeT(lang);
+  const usage = contentUsage || { source: null, raw: null };
+  const ba = botAuth || { browserOk: false, aiOk: 0, aiTotal: 0 };
+  const mcp = webmcp || { rendered: false, api: null };
+  const conv = conventions || {};
+  const convHave = ['skillMd', 'mcpJson', 'agentSkills'].filter((k) => conv[k]).length;
+
+  // Il sito filtra per user-agent se il browser passa e qualche UA AI no.
+  const filtered = ba.browserOk && ba.aiTotal > 0 && ba.aiOk < ba.aiTotal;
+
+  const checks = [
+    { name: t('agentReady.usage.name'), status: usage.source ? 'good' : 'info',
+      detail: usage.source ? t('agentReady.usage.detail.ok', { source: usage.source, raw: usage.raw }) : t('agentReady.usage.detail.none'),
+      fix: usage.source ? null : t('agentReady.usage.fix') },
+    { name: t('agentReady.botauth.name'), status: filtered ? 'warn' : 'info',
+      // Beacon non può verificare dall'esterno se l'edge verifica le firme: è il bot
+      // che firma, non il sito, e inviare un Signature-Agent senza firma valida
+      // sarebbe spoofing, non una misura. Il check è diagnostico e lo dichiara.
+      detail: (filtered
+        ? t('agentReady.botauth.detail.filtered', { aiOk: ba.aiOk, aiTotal: ba.aiTotal })
+        : t('agentReady.botauth.detail.uniform')) + ' — ' + t('agentReady.botauth.limit'),
+      limit: true,
+      fix: filtered ? t('agentReady.botauth.fix') : null },
+    { name: t('agentReady.webmcp.name'),
+      status: mcp.api ? 'good' : 'info',
+      detail: mcp.api
+        ? t('agentReady.webmcp.detail.ok', { api: mcp.api }) + (mcp.api === 'navigator.modelContext' ? ' — ' + t('agentReady.webmcp.deprecated') : '')
+        : (mcp.rendered ? t('agentReady.webmcp.detail.none') : t('agentReady.webmcp.detail.norender')),
+      fix: mcp.api || !mcp.rendered ? null : t('agentReady.webmcp.fix') },
+    { name: t('agentReady.conventions.name'), status: convHave ? 'good' : 'info',
+      detail: t('agentReady.conventions.detail', { have: convHave }),
+      fix: convHave === 0 ? t('agentReady.conventions.fix') : null },
+  ];
+
+  // Punteggio informativo: quota di segnali dichiarati. Non entra nell'overall.
+  const declared = (usage.source ? 1 : 0) + (mcp.api ? 1 : 0) + (convHave ? 1 : 0) + (filtered ? 0 : 1);
+  return { informational: true, score: clamp(pct(declared, 4)), checks };
+}
+export const AGENT_READY_LABEL = 'Standard d\'avanguardia per gli agenti';
 
 // ⑦ FONDAMENTALI TECNICI — informativo ma con allarmi forti (noindex/HTTPS bloccano la visibilità).
 export function analyzeTech({ https, noindex, viewport, statusOk }, lang = 'it') {

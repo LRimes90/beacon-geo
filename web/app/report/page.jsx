@@ -105,6 +105,11 @@ export default function Report() {
             {res.history?.previous && res.history.delta && (
               <section className="rights" style={{ marginTop: 18 }}>
                 <div className="rt">{t('Rispetto alla scansione precedente')} <span className="info">— {new Date(res.history.previous.ts).toLocaleDateString('it-CH')} · {res.history.count} {t('scansioni totali')}</span></div>
+                {res.history.delta.profileChanged && (
+                  <p className="info" style={{ margin: '4px 0 8px' }}>
+                    {t('Il profilo dei pesi è cambiato')} ({res.history.delta.profileChanged.prev || '—'} → {res.history.delta.profileChanged.curr}): {t('il punteggio GEO non è confrontabile con la scansione precedente.')}
+                  </p>
+                )}
                 <ul>
                   <DeltaRow label="GEO" d={res.history.delta.geo} />
                   <DeltaRow label={t('Accessibilità')} d={res.history.delta.a11y} />

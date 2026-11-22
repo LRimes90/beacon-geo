@@ -15,6 +15,22 @@ export const AI_CRAWLERS = [
 // Sottoinsieme per il fetch live (impersonazione reale — teniamolo piccolo per non essere invasivi).
 export const LIVE_UA = ['GPTBot', 'ClaudeBot', 'PerplexityBot', 'Googlebot', 'CCBot'];
 
+// Le due famiglie hanno conseguenze opposte e il report deve dirlo.
+// Training: alimentano i modelli. Bloccarli NON riduce le citazioni di oggi:
+// gli archivi sono già raccolti e il training è retroattivo.
+// Retrieval live: leggono la pagina nel momento in cui un utente fa la domanda.
+// Bloccarli significa non essere citabili in tempo reale (BuzzStream, 4M citazioni).
+// L'unione deve coprire AI_CRAWLERS: un bot non classificato è un report che mente
+// per omissione (invariante verificata in test.js).
+export const TRAINING_CRAWLERS = [
+  'GPTBot', 'ClaudeBot', 'anthropic-ai', 'Google-Extended', 'CCBot',
+  'Bytespider', 'cohere-ai', 'Meta-ExternalAgent', 'Amazonbot',
+];
+export const RETRIEVAL_CRAWLERS = [
+  'OAI-SearchBot', 'ChatGPT-User', 'Claude-User', 'PerplexityBot', 'Googlebot',
+  'Bingbot', 'Applebot', 'DuckAssistBot', 'YouBot', 'MistralAI-User',
+];
+
 // Normalizza l'indirizzo digitato dall'utente: aggiunge lo schema se manca e
 // controlla che sia parsabile. Prima questa logica era ripetuta in quattro
 // orchestratori e `new URL` lanciava un `TypeError: Invalid URL` che le route
@@ -69,7 +85,9 @@ export async function fetchText(url, { ua = BROWSER_UA, timeout = 15000, retries
       const { res, finalUrl } = await safeFetch(url, { headers: { 'User-Agent': ua, Accept: 'text/html,application/xhtml+xml,*/*' }, signal: ctrl.signal });
       const body = await readCapped(res);
       clearTimeout(timer);
-      return { ok: res.ok, status: res.status, body, finalUrl };
+      // `headers` è l'oggetto Headers nativo: serve ad AIPREF (Content-Usage) e non
+      // finisce nel JSON del report (Headers non è serializzabile).
+      return { ok: res.ok, status: res.status, body, finalUrl, headers: res.headers };
     } catch (e) {
       clearTimeout(timer);
       last = { ok: false, status: 0, body: '', error: String((e && e.message) || e) };
@@ -196,6 +214,168 @@ export function links(html, host) {
     else internal++;
   }
   return { internal, external, total: hrefs.length };
+}
+
+// ---------- answer-readiness (funzioni pure) ----------
+// ponytail: regex, non un parser DOM — stessa scelta di semanticRatio/headings/imgAlt
+// ponytail: e vincolo di progetto (zero dipendenze). HTML gravemente malformato (<p> mai
+// ponytail: chiusi) degrada paragraphWords: la via d'uscita è un tokenizer minimale, non cheerio.
+
+// Testo nudo: via i tag, le entità diventano spazio, gli spazi si collassano.
+export function stripTags(html) {
+  return String(html || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z#0-9]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Lingua dichiarata dalla pagina. Serve al check dei titoli-domanda: le parole
+// interrogative vanno cercate nella lingua del SITO, non in quella del report.
+export function htmlLang(html) {
+  const m = String(html || '').match(/<html[^>]*\slang=["']?([a-z]{2})/i);
+  return m ? m[1].toLowerCase() : null;
+}
+
+// Conta le parole di un testo già nudo (stessa regola di wordCount, senza stripping).
+const textWords = (s) => (String(s || '').match(/[\p{L}\p{N}]{2,}/gu) || []).length;
+
+// Prima frase: fino al primo punto/!/? seguito da spazio o fine. Senza punteggiatura
+// entro 600 caratteri si taglia lì: un muro di testo senza punti è già la risposta
+// che il check vuole segnalare.
+function firstSentence(text) {
+  const s = String(text || '').trim();
+  const m = s.match(/^[\s\S]{1,600}?[.!?](?:\s|$)/);
+  return m ? m[0] : s.slice(0, 600);
+}
+
+// "Cornice" della pagina (menu, testata, piè di pagina): condivisa da sections,
+// extractableBlocks, paragraphWords e citableEvidence, altrimenti un h3 di sidebar
+// ("Iscriviti alla newsletter"), un menu di link o un numero di telefono in <header>
+// si mischiano col contenuto reale — e ogni sito WordPress ha tutti e tre.
+const stripChrome = (html) => html
+  .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
+  .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
+  .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ');
+
+// Parole del solo CONTENUTO (chrome escluso): wordCount(html) misura la pagina intera
+// e resta così per readabilityMetrics; qui serve lo stesso numero che sections/
+// extractableBlocks/paragraphWords/citableEvidence già usano, altrimenti il gate delle
+// 300 parole e i denominatori vengono gonfiati da menu/testata/footer (round di review 1).
+export function contentWords(html) {
+  return wordCount(stripChrome(bodyHtml(html)));
+}
+
+// Una voce per ogni H2/H3, con la lunghezza in parole della prima frase del blocco
+// di testo che lo segue. Il blocco è il primo <p> dopo l'heading; se non c'è <p>,
+// è il testo nudo fino all'heading successivo.
+export function sections(html) {
+  const body = stripChrome(bodyHtml(html));
+  const re = /<h([23])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
+  const found = [];
+  let m;
+  while ((m = re.exec(body))) found.push({ heading: stripTags(m[2]), from: re.lastIndex, level: m[1] });
+  return found.map((s, i) => {
+    const chunk = body.slice(s.from, i + 1 < found.length ? found[i + 1].from : body.length);
+    const p = chunk.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
+    const text = stripTags(p ? p[1] : chunk);
+    return { heading: s.heading, level: s.level, firstSentenceWords: textWords(firstSentence(text)) };
+  });
+}
+
+// Blocchi <ul>/<ol> di primo livello in `html`: un backreference su un nome di tag
+// generico (\1) si ferma al primo tag di chiusura omonimo, che con una lista annidata
+// è quello INTERNO, non quello che chiude la lista esterna ("<ul><li>passo<ul>...
+// </ul></li></ul>" veniva letto come chiuso al primo </ul>). Qui si segue la
+// profondità di apertura/chiusura invece del backreference.
+function topLevelLists(html) {
+  const re = /<(\/?)(ul|ol)\b[^>]*>/gi;
+  const blocks = [];
+  let depth = 0, from = -1, m;
+  while ((m = re.exec(html))) {
+    if (!m[1]) { if (depth === 0) from = re.lastIndex; depth++; }
+    else if (depth > 0 && --depth === 0) blocks.push(html.slice(from, m.index));
+  }
+  return blocks;
+}
+
+// Rimuove le sotto-liste annidate dentro una lista di primo livello (stessa logica
+// di profondità di topLevelLists, applicata al contenuto interno): senza questo, "passo
+// uno" con una sotto-lista di 2 punti conterebbe 3 <li> invece di 1 voce di primo livello.
+// ponytail: se non c'è spazio attorno al tag annidato nell'HTML sorgente, le due parole
+// ai margini possono toccarsi senza spazio — caso raro, non coperto.
+function stripNestedLists(html) {
+  const re = /<(\/?)(ul|ol)\b[^>]*>/gi;
+  let depth = 0, last = 0, out = '', m;
+  while ((m = re.exec(html))) {
+    if (!m[1]) { if (depth === 0) out += html.slice(last, m.index); depth++; }
+    else if (depth > 0 && --depth === 0) last = re.lastIndex;
+  }
+  return out + html.slice(last);
+}
+
+// Blocchi che una AI può estrarre e citare: liste con almeno 3 voci e tabelle con
+// intestazioni. Navigazione, header e footer sono esclusi: senza questo filtro ogni
+// sito WordPress guadagnerebbe punti per il proprio menu. Esclusa anche la lista in
+// cui oltre il 70% delle voci è praticamente solo un link (widget "articoli recenti").
+export function extractableBlocks(html) {
+  const body = stripChrome(bodyHtml(html));
+  let lists = 0;
+  for (const listInner of topLevelLists(body)) {
+    const items = stripNestedLists(listInner).match(/<li\b[\s\S]*?<\/li>/gi) || [];
+    if (items.length < 3) continue;
+    const linkOnly = items.filter((li) => {
+      const txt = stripTags(li);
+      if (!txt) return true;
+      const anchor = stripTags((li.match(/<a\b[\s\S]*?<\/a>/i) || [''])[0]);
+      return anchor.length >= txt.length * 0.8;
+    }).length;
+    if (linkOnly / items.length > 0.7) continue;
+    lists++;
+  }
+  const tables = [...body.matchAll(/<table\b[\s\S]*?<\/table>/gi)].filter((m) => /<th\b/i.test(m[0])).length;
+  return { lists, tables, total: lists + tables };
+}
+
+// Distribuzione delle parole per paragrafo. I paragrafi sotto le 10 parole
+// (didascalie, note, "Leggi anche") non sono prosa: fuori dal denominatore.
+export function paragraphWords(html) {
+  const words = (stripChrome(bodyHtml(html)).match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [])
+    .map((p) => textWords(stripTags(p)))
+    .filter((n) => n >= 10);
+  return { total: words.length, long: words.filter((n) => n > 120).length, words };
+}
+
+// Un numero come "1.500 CHF" matcha sia il pattern con unità sia quello delle migliaia:
+// senza dedup viene contato 2 volte per lo stesso dato (round di review 1). Si fondono
+// gli intervalli di match sovrapposti e si conta un gruppo fuso una volta sola.
+function countNumberTokens(text) {
+  const patterns = [
+    /\d[\d.,]*\s?(?:%|€|\$|CHF|USD|EUR|km|kg|mq|m²|GB|MB|ms|s\b|min\b|ore|anni|giorni|volte|x\b)/gi,
+    /\b(?:19|20)\d{2}\b/g,
+    /\b\d{1,3}(?:[.\s]\d{3})+\b/g,
+  ];
+  const spans = [];
+  for (const re of patterns) for (const m of text.matchAll(re)) spans.push([m.index, m.index + m[0].length]);
+  spans.sort((a, b) => a[0] - b[0]);
+  let groups = 0, curEnd = -1;
+  for (const [start, end] of spans) {
+    if (start >= curEnd) { groups++; curEnd = end; }
+    else if (end > curEnd) { curEnd = end; }
+  }
+  return groups;
+}
+
+// Elementi che rendono un passaggio citabile: dati con unità di misura, anni,
+// citazioni esplicite, link a fonti esterne dentro il testo (non nel menu/testata/footer).
+export function citableEvidence(html, host) {
+  const body = stripChrome(bodyHtml(html));
+  const text = stripTags(body);
+  const numbers = countNumberTokens(text);
+  const quotes = count(body, /<blockquote\b/gi) + count(body, /<cite\b/gi);
+  let extLinks = 0;
+  for (const p of body.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || []) extLinks += links(p, host).external;
+  return { numbers, quotes, extLinks, total: numbers + quotes + extLinks };
 }
 
 // ---------- robots.txt ----------

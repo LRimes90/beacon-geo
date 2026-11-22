@@ -1,8 +1,8 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText } from './src/lib.js';
-import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech } from './src/analyzers.js';
+import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
+import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
 import { summarizePsi } from './src/perf.js';
@@ -15,6 +15,7 @@ import { renderHtml } from './src/render.js';
 import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
 import { auditHtmlSnapshot } from './audit.js';
+import WEIGHTS, { PROFILE } from './weights.mjs';
 import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
 import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
 import { deriveObligations, decideVerdict, assessAiAct, euEvidence, coverage, OBLIGATIONS, QUESTIONS, SHOW_IF } from './src/aiactAssess.js';
@@ -46,6 +47,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(r.isAllowed('GPTBot', '/private/x') === false, 'path bloccato rispettato');
 }
 
+// weights.mjs — profilo EVIDENCE-2026: i pesi sono una dichiarazione pubblica, non un dettaglio interno
+{
+  const somma = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
+  ok(Math.abs(somma - 1) < 1e-9, 'pesi: la somma fa esattamente 1.00 (avuta ' + somma + ')');
+  ok(PROFILE === 'EVIDENCE-2026', 'pesi: il profilo si chiama EVIDENCE-2026: ' + PROFILE);
+  ok(WEIGHTS.answerability === 0.25, 'pesi: answerability 0.25 (la categoria piu pesante)');
+  ok(WEIGHTS.agentFiles === 0.05, 'pesi: agentFiles declassata a 0.05');
+  ok(WEIGHTS.answerability > WEIGHTS.structured, 'pesi: answerability pesa piu di structured (evidenza Ahrefs sullo schema)');
+  ok(Object.keys(WEIGHTS).length === 6, 'pesi: sei categorie pesate');
+}
+
 // HTML helpers
 {
   const html = `<title> Ciao | Sito </title><meta name="description" content="una descrizione di prova sufficientemente lunga da passare"><script type="application/ld+json">{"@type":"Organization"}</script><header></header><main></main><div></div><img src="a" alt="x"><img src="b">`;
@@ -59,6 +71,205 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(semanticRatio(html).semantic === 2, 'tag semantici contati (header+main)');
   ok(imgAlt(html).total === 2 && imgAlt(html).withAlt === 1, 'alt immagini contate');
   ok(wordCount('<p>due parole</p>') === 2, 'word count ignora i tag');
+}
+
+// answer-readiness: helper di parsing. I falsi positivi vengono prima dei casi felici:
+// un menu di navigazione NON è un blocco estraibile, e ogni sito WordPress ne ha uno.
+{
+  const menu = '<body><nav><ul><li><a href="/a">Home</a></li><li><a href="/b">Chi siamo</a></li><li><a href="/c">Contatti</a></li></ul></nav><main><p>testo</p></main></body>';
+  const eb = extractableBlocks(menu);
+  ok(eb.lists === 0, 'blocchi: la lista dentro <nav> non conta (avuti ' + eb.lists + ')');
+
+  const footerMenu = '<body><footer><ul><li><a href="/x">Privacy</a></li><li><a href="/y">Cookie</a></li><li><a href="/z">Note legali</a></li></ul></footer></body>';
+  ok(extractableBlocks(footerMenu).lists === 0, 'blocchi: la lista nel footer non conta');
+
+  // Lista di soli link fuori da nav (widget "articoli recenti"): >70% link-only → esclusa.
+  const widget = '<body><main><ul><li><a href="/1">Primo articolo</a></li><li><a href="/2">Secondo articolo</a></li><li><a href="/3">Terzo articolo</a></li></ul></main></body>';
+  ok(extractableBlocks(widget).lists === 0, 'blocchi: lista di soli link esclusa (widget, non contenuto)');
+
+  // Lista vera di contenuto: conta.
+  const vera = '<body><main><ul><li>Il primo passo è verificare il robots.txt del sito</li><li>Il secondo è controllare la sitemap</li><li>Il terzo è misurare il testo servito senza JavaScript</li></ul></main></body>';
+  ok(extractableBlocks(vera).lists === 1, 'blocchi: lista di contenuto conta');
+
+  // Lista corta: sotto i 3 <li> non è un blocco.
+  ok(extractableBlocks('<body><main><ul><li>uno che dice qualcosa</li><li>due che dice altro</li></ul></main></body>').lists === 0, 'blocchi: meno di 3 voci non conta');
+
+  // Tabella: solo con intestazioni (una tabella di layout non è dato estraibile).
+  ok(extractableBlocks('<body><main><table><tr><th>A</th></tr><tr><td>1</td></tr></table></main></body>').tables === 1, 'blocchi: tabella con <th> conta');
+  ok(extractableBlocks('<body><main><table><tr><td>layout</td></tr></table></main></body>').tables === 0, 'blocchi: tabella senza <th> non conta');
+
+  // Lista con sotto-elenco annidato (istruzioni passo-passo): il backreference sul
+  // nome di tag si fermava al primo </ul> omonimo, cioe quello della sotto-lista
+  // interna, azzerando la lista esterna. Deve valere 1, non 0 e non 2.
+  const passi = '<body><main><ul>'
+    + '<li>Verifica il robots.txt del sito<ul><li>controlla lo user-agent</li><li>controlla il percorso disallow</li></ul></li>'
+    + '<li>Controlla la sitemap XML</li>'
+    + '<li>Misura il testo servito senza JavaScript</li>'
+    + '</ul></main></body>';
+  ok(extractableBlocks(passi).lists === 1, 'blocchi: lista con sotto-elenco annidato conta 1 (avuti ' + extractableBlocks(passi).lists + ')');
+}
+{
+  // sections(): prima frase dopo ogni H2/H3, in parole.
+  const html = '<body><main>'
+    + '<h2>Che cos\'è il GEO?</h2><p>È la disciplina che rende un sito citabile dai motori generativi. Segue una spiegazione molto più lunga che non deve entrare nel conteggio della prima frase.</p>'
+    + '<h3>Serve a tutti?</h3><p>' + 'parola '.repeat(80) + 'fine.</p>'
+    + '</main></body>';
+  const s = sections(html);
+  ok(s.length === 2, 'sezioni: due heading H2/H3 trovati (avuti ' + s.length + ')');
+  ok(s[0].heading.includes('GEO'), 'sezioni: testo dell\'heading estratto senza tag');
+  ok(s[0].firstSentenceWords >= 10 && s[0].firstSentenceWords <= 16, 'sezioni: prima frase misurata, non tutto il paragrafo: ' + s[0].firstSentenceWords);
+  ok(s[1].firstSentenceWords > 70, 'sezioni: paragrafo senza punto fermo conta come frase lunga: ' + s[1].firstSentenceWords);
+  ok(sections('<body><main><p>nessun heading</p></main></body>').length === 0, 'sezioni: nessun H2/H3 → array vuoto');
+
+  // Un h3 nel footer (widget "Iscriviti alla newsletter") non e una sezione di
+  // contenuto: extractableBlocks gia esclude nav/header/footer, sections deve farlo
+  // allo stesso modo, altrimenti ogni sito WordPress guadagna punti dal proprio footer.
+  const conFooter = '<body><main><h2>Come funziona il GEO</h2><p>Il GEO ottimizza i contenuti per i motori generativi, non solo per Google.</p></main>'
+    + '<footer><h3>Iscriviti alla newsletter</h3><p>Ricevi aggiornamenti ogni settimana sul mondo GEO.</p></footer></body>';
+  const sf = sections(conFooter);
+  ok(sf.length === 1, 'sezioni: heading nel footer escluso (avuti ' + sf.length + ')');
+}
+{
+  // paragraphWords(): i paragrafi sotto le 10 parole (didascalie, note) non entrano nella distribuzione.
+  const html = '<body><main><p>' + 'parola '.repeat(150) + '</p><p>Foto: archivio</p><p>' + 'parola '.repeat(40) + '</p></main></body>';
+  const p = paragraphWords(html);
+  ok(p.total === 2, 'paragrafi: didascalia sotto le 10 parole esclusa (totale ' + p.total + ')');
+  ok(p.long === 1, 'paragrafi: uno solo oltre le 120 parole');
+}
+{
+  // citableEvidence(): numeri con unità, citazioni, link esterni dentro il testo.
+  const html = '<body><main><p>Nel 2026 il 97% dei file non viene letto, su 137.210 domini.</p>'
+    + '<blockquote>Correlazione non è causalità.</blockquote>'
+    + '<p>Fonte: <a href="https://ahrefs.com/blog/llmstxt-study/">studio Ahrefs</a> e <a href="/interno">pagina interna</a>.</p>'
+    + '</main></body>';
+  const ev = citableEvidence(html, 'esempio.it');
+  ok(ev.numbers >= 3, 'evidenza: percentuale, anno e numero grande contati (' + ev.numbers + ')');
+  ok(ev.quotes === 1, 'evidenza: blockquote contato');
+  ok(ev.extLinks === 1, 'evidenza: solo il link esterno conta, non quello interno (' + ev.extLinks + ')');
+
+  // Boilerplate di testata (telefono, anno "dal 2015") non e evidenza dell'articolo:
+  // extractableBlocks/sections escludono gia <header>, citableEvidence deve fare lo stesso.
+  const conHeader = '<body><header><p>Chiamaci al numero 091 123 45 67, dal 2015 al vostro servizio.</p></header>'
+    + '<main><p>Il nostro studio segue clienti in Ticino dal 2015.</p></main></body>';
+  const evh = citableEvidence(conHeader, 'esempio.it');
+  ok(evh.numbers === 1, 'evidenza: numeri nella testata esclusi, resta solo l\'anno nel main (avuti ' + evh.numbers + ')');
+}
+{
+  ok(htmlLang('<html lang="de-CH"><body></body></html>') === 'de', 'lingua: <html lang="de-CH"> → de');
+  ok(htmlLang('<html><body></body></html>') === null, 'lingua: senza attributo → null');
+  ok(stripTags('<p>uno <b>due</b>&nbsp;tre</p>').trim() === 'uno due tre', 'stripTags: tag via, entità collassata');
+}
+
+// answerability: la pagina che non è contenuto non va penalizzata, va esclusa.
+{
+  const breve = '<html lang="it"><body><main><h1>Contatti</h1><p>Scrivici a info@esempio.it oppure chiamaci in orario di ufficio.</p></main></body></html>';
+  const a = analyzeAnswerability({ served: breve, host: 'esempio.it' });
+  ok(a.unmeasured === true, 'answerability: sotto le 300 parole la categoria esce dal punteggio');
+  ok(a.checks.length === 1 && a.checks[0].status === 'info', 'answerability: unmeasured spiega perché, senza fix inventati');
+}
+{
+  // Pagina IDEALE: risposta breve dopo ogni heading, liste, paragrafi corti, dati -
+  // tutti e cinque i controlli in "good". Il paragrafo lungo della versione precedente
+  // (200 ripetizioni in un solo <p>) faceva scattare il crit sui paragrafi nonostante
+  // gli altri assert restassero verdi (>= 70 e >= 4 buoni non inchiodavano i pesi
+  // esatti) - round di review 1, finding 6. Diviso in piu paragrafi corti: ora
+  // score === 100 inchioda la somma dei pesi (25+20+20+15+20).
+  const buona = '<html lang="it"><body><main><h1>Guida</h1>'
+    + '<h2>Che cos\'è il GEO?</h2><p>È la disciplina che rende un sito citabile dai motori generativi.</p>'
+    + '<p>' + 'parola '.repeat(60) + '</p>'
+    + '<h2>Quanto conta il robots.txt?</h2><p>Conta meno di quanto si creda, secondo i dati.</p>'
+    + '<p>Nel 2026 il 95% delle pagine citate bloccava GPTBot, su 4.000.000 di citazioni analizzate.</p>'
+    + '<ul><li>Verifica il testo servito senza JavaScript</li><li>Controlla la sitemap dichiarata</li><li>Misura le liste e le tabelle della pagina</li></ul>'
+    + '<blockquote>Correlazione non è causalità.</blockquote>'
+    + '<p>Fonte: <a href="https://ahrefs.com/blog/">Ahrefs</a>. ' + 'parola '.repeat(60) + '</p>'
+    + '<p>' + 'parola '.repeat(60) + '</p>'
+    + '<p>' + 'parola '.repeat(60) + '</p>'
+    + '</main></body></html>';
+  const a = analyzeAnswerability({ served: buona, host: 'esempio.it' });
+  ok(!a.unmeasured, 'answerability: pagina oltre le 300 parole viene misurata');
+  ok(a.checks.length === 5, 'answerability: cinque check (avuti ' + a.checks.length + ')');
+  ok(a.checks.every((c) => c.status === 'good'), 'answerability: pagina ideale, tutti i controlli good: ' + a.checks.map((c) => c.status));
+  ok(a.score === 100, 'answerability: pagina ideale inchioda la somma dei pesi a 100 (avuto ' + a.score + ')');
+}
+{
+  // Muro di testo: 800 parole in un solo paragrafo, nessuna lista, nessun heading.
+  const muro = '<html lang="it"><body><main><h1>Servizi</h1><p>' + 'parola '.repeat(800) + '</p></main></body></html>';
+  const a = analyzeAnswerability({ served: muro, host: 'esempio.it' });
+  ok(a.score < 40, 'answerability: muro di testo bocciato: ' + a.score);
+  ok(a.checks.some((c) => c.status === 'crit'), 'answerability: almeno un check critico sul muro di testo');
+  ok(a.checks.every((c) => c.status !== 'crit' || c.fix), 'answerability: ogni check critico porta un fix azionabile');
+}
+{
+  // Titoli-domanda: la lingua è quella della PAGINA, non quella del report.
+  ok(isQuestionHeading('Wie funktioniert das?', 'de'), 'domanda: punto interrogativo riconosciuto in qualsiasi lingua');
+  ok(isQuestionHeading('Warum Beacon', 'de'), 'domanda: parola interrogativa tedesca senza punto');
+  ok(isQuestionHeading('O que é GEO', 'pt'), 'domanda: bigramma portoghese "o que"');
+  ok(!isQuestionHeading('O nosso metodo', 'pt'), 'domanda: articolo iniziale non è una domanda (falso positivo di "o")');
+  ok(isQuestionHeading('Come funziona', 'it'), 'domanda: parola interrogativa italiana');
+  ok(!isQuestionHeading('Comunicazione e stampa', 'it'), 'domanda: "Comunicazione" non è "come" (match su parola intera)');
+  // titoli di menu, non domande: falso positivo su pagina aziendale reale (review 1, finding 3)
+  ok(!isQuestionHeading('Chi siamo', 'it'), 'domanda: "Chi siamo" e un titolo di menu, non una domanda');
+  ok(!isQuestionHeading('Dove siamo', 'it'), 'domanda: "Dove siamo" e un titolo di menu, non una domanda');
+  ok(!isQuestionHeading('Come raggiungerci', 'it'), 'domanda: "Come raggiungerci" e un titolo di menu, non una domanda');
+  ok(!isQuestionHeading('Quem somos', 'pt'), 'domanda: "Quem somos" (pt) e un titolo di menu, non una domanda');
+
+  const de = '<html lang="de"><body><main><h2>Wie funktioniert Beacon?</h2><p>Kurz gesagt: es misst.</p><p>' + 'wort '.repeat(400) + '</p></main></body></html>';
+  const a = analyzeAnswerability({ served: de, host: 'esempio.de' }, 'it');
+  const q = a.checks.find((c) => c.name.toLowerCase().includes('domanda'));
+  ok(q && q.status === 'good', 'answerability: heading tedesco valutato in tedesco anche con report in italiano');
+}
+{
+  // review 1, finding critico: il gate delle 300 parole deve girare sul contenuto
+  // reale (contentWords), non sulla pagina intera (wordCount) - altrimenti un chrome
+  // pesante (menu, testata, footer) puo far passare il gate una pagina di contatti.
+  const contatti = '<html lang="it"><body>'
+    + '<header><p>' + 'avviso '.repeat(200) + '</p></header>'
+    + '<nav><ul>'
+    + '<li><a href="/">Pagina iniziale del sito</a></li><li><a href="/chi-siamo">Chi siamo e la nostra storia</a></li>'
+    + '<li><a href="/servizi">Tutti i nostri servizi disponibili</a></li><li><a href="/blog">Blog e approfondimenti tematici</a></li>'
+    + '<li><a href="/eventi">Calendario degli eventi in programma</a></li><li><a href="/news">Ultime notizie e comunicati</a></li>'
+    + '<li><a href="/faq">Domande frequenti e risposte utili</a></li><li><a href="/team">Il nostro team di collaboratori</a></li>'
+    + '<li><a href="/partner">I partner che sostengono il progetto</a></li><li><a href="/sostegno">Come sostenere le nostre attivita</a></li>'
+    + '<li><a href="/dona">Fai una donazione libera oggi</a></li><li><a href="/volontari">Diventa volontario con noi</a></li>'
+    + '<li><a href="/press">Rassegna stampa e comunicati ufficiali</a></li><li><a href="/contatti">Contatti e informazioni utili</a></li>'
+    + '</ul></nav>'
+    + '<main><h1>Contatti</h1><p>Scrivici a info@esempio.it oppure chiamaci in orario di ufficio per qualsiasi informazione sui nostri servizi e sulle nostre attivita sul territorio.</p></main>'
+    + '<footer><p>Indirizzo: Via Esempio numero 1, 6500 Bellinzona, Canton Ticino, Svizzera. Orari di apertura: dal lunedi al venerdi dalle 9 alle 18, sabato su appuntamento. Registro di commercio numero CH-123.456.789. Dal 2015 siamo al servizio della regione, con sedi anche a Lugano e a Locarno per meglio servire la clientela in tutto il territorio del Cantone.</p></footer>'
+    + '</body></html>';
+  ok(wordCount(contatti) >= 300, 'answerability: pagina di controllo, wordCount pagina intera (col chrome) supera 300 (avuto ' + wordCount(contatti) + ')');
+  ok(contentWords(contatti) < 300, 'lib: contentWords esclude il chrome e resta sotto 300 (avuto ' + contentWords(contatti) + ')');
+  const a = analyzeAnswerability({ served: contatti, host: 'esempio.it' });
+  ok(a.unmeasured === true, 'answerability: senza contentWords il gate delle 300 sarebbe stato aggirato dal chrome');
+}
+{
+  // review 1, finding importante: paragraphWords era l'unico dei quattro helper senza
+  // filtro chrome - un <p> lungo dentro <footer> sporcava il conteggio dei paragrafi.
+  const conFooterLungo = '<html><body><main><p>' + 'parola '.repeat(15) + '</p></main><footer><p>' + 'parola '.repeat(160) + '</p></footer></body></html>';
+  const pw = paragraphWords(conFooterLungo);
+  ok(pw.total === 1 && pw.long === 0, 'lib: paragraphWords ignora i <p> dentro <footer> (avuto ' + JSON.stringify(pw) + ')');
+}
+{
+  // review 1, finding importante: match sovrapposti (unita di misura + migliaia) non
+  // vanno contati due volte per lo stesso numero, es. "1.500 CHF".
+  const ev = citableEvidence('<p>pacchetti da 1.500 CHF, 2.300 CHF e 4.900 CHF.</p>', 'esempio.it');
+  ok(ev.numbers === 3, 'lib: citableEvidence deduplica match sovrapposti sullo stesso numero (avuto ' + ev.numbers + ')');
+}
+{
+  // review 1, finding importante: con un numero pari di sezioni la mediana e la media
+  // dei due valori centrali (20 e 40 -> 30), non il valore superiore (40, che darebbe
+  // "warn" invece di "good").
+  const medianTest = '<html lang="it"><body><main><h1>Test mediana</h1>'
+    + '<h2>Domanda uno?</h2><p>' + 'parola '.repeat(19) + 'fine.</p>'
+    + '<h2>Domanda due?</h2><p>' + 'parola '.repeat(39) + 'fine.</p>'
+    + '<p>' + 'parola '.repeat(250) + '</p>'
+    + '</main></body></html>';
+  const a = analyzeAnswerability({ served: medianTest, host: 'esempio.it' });
+  ok(a.checks[0].status === 'good', 'answerability: mediana vera (30) su 2 sezioni, non il valore superiore (40): ' + a.checks[0].detail);
+}
+{
+  ok(pageLang('<html lang="fr"><body></body></html>') === 'fr', 'pageLang: attributo lang rispettato');
+  ok(pageLang('<html><body><p>Il sito è una vetrina che non ha dichiarato la lingua nel markup</p></body></html>') === 'it', 'pageLang: fallback euristico sulle stopword italiane');
+  ok(pageLang('<html><body><p>The site does not declare its language in the markup and that is the case here</p></body></html>') === 'en', 'pageLang: fallback euristico sulle stopword inglesi');
 }
 
 // contentHtml/bodyHtml — quello che sembra un tag ma non è nel DOM non va contato
@@ -112,11 +323,53 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   });
   ok(acc.score > 0 && acc.score <= 100, 'access score nel range: ' + acc.score);
 }
+// access: la separazione fra training e retrieval è una tassonomia, se un bot nuovo
+// entra in AI_CRAWLERS senza essere classificato, il report mente per omissione.
 {
-  const af = analyzeAgentFiles({ robotsTxt: true, sitemap: true, llmsTxt: false, skillMd: false, mcpJson: false, agentSkills: false });
-  ok(af.score < 100 && af.score > 0, 'agentFiles penalizza llms.txt mancante: ' + af.score);
-  const full = analyzeAgentFiles({ robotsTxt: true, sitemap: true, llmsTxt: true, skillMd: true, mcpJson: true, agentSkills: true });
-  ok(full.score === 100, 'tutti i file → 100: ' + full.score);
+  const uniti = [...TRAINING_CRAWLERS, ...RETRIEVAL_CRAWLERS];
+  const orfani = AI_CRAWLERS.filter((ua) => !uniti.includes(ua));
+  ok(orfani.length === 0, 'access: ogni crawler è classificato training o retrieval (orfani: ' + orfani.join(', ') + ')');
+  const doppi = uniti.filter((ua) => TRAINING_CRAWLERS.includes(ua) && RETRIEVAL_CRAWLERS.includes(ua));
+  ok(doppi.length === 0, 'access: nessun crawler in entrambi i gruppi (' + doppi.join(', ') + ')');
+  ok(RETRIEVAL_CRAWLERS.includes('OAI-SearchBot') && RETRIEVAL_CRAWLERS.includes('PerplexityBot'), 'access: i bot di retrieval live sono nel gruppo giusto');
+  ok(TRAINING_CRAWLERS.includes('GPTBot') && TRAINING_CRAWLERS.includes('Google-Extended'), 'access: i bot di training sono nel gruppo giusto');
+}
+{
+  // Bloccare solo il training pesa poco; bloccare il retrieval pesa molto.
+  const tutti = {}; for (const ua of AI_CRAWLERS) tutti[ua] = true;
+  const soloTraining = { ...tutti }; for (const ua of TRAINING_CRAWLERS) soloTraining[ua] = false;
+  const soloRetrieval = { ...tutti }; for (const ua of RETRIEVAL_CRAWLERS) soloRetrieval[ua] = false;
+  const live = {}; for (const ua of LIVE_UA) live[ua] = { ok: true };
+
+  const aT = analyzeAccess({ robotsAllowed: soloTraining, liveFetch: live });
+  const aR = analyzeAccess({ robotsAllowed: soloRetrieval, liveFetch: live });
+  ok(aR.score < aT.score, 'access: bloccare il retrieval live costa più che bloccare il training (' + aR.score + ' < ' + aT.score + ')');
+  ok(aT.checks.length === 3, 'access: tre check, training, retrieval, fetch live');
+  const tr = aT.checks.find((c) => c.name.toLowerCase().includes('training'));
+  ok(tr && /archivi|già raccolt/i.test(tr.detail), 'access: il check training spiega che il blocco non riduce le citazioni di oggi');
+  ok(!tr.fix, 'access: nessun fix che chiede di aprire i bot di training, è una scelta del sito');
+
+  // liveFetch pesa più del robots: un WAF che blocca tutto affonda il punteggio
+  // anche con un robots.txt perfetto.
+  const liveKo = {}; for (const ua of LIVE_UA) liveKo[ua] = { ok: false };
+  const aperto = analyzeAccess({ robotsAllowed: tutti, liveFetch: liveKo });
+  ok(aperto.score <= 55, 'access: robots aperto ma WAF che blocca → punteggio basso: ' + aperto.score);
+}
+{
+  // agentFiles: il punteggio sta su robots.txt e sitemap (scopribilità reale).
+  // llms.txt compare come check ma NON contribuisce: misurato su 137.210 domini,
+  // il 97% dei file non viene mai letto (Ahrefs).
+  const senzaLlms = analyzeAgentFiles({ robotsTxt: true, sitemap: true, llmsTxt: false, skillMd: false, mcpJson: false, agentSkills: false });
+  ok(senzaLlms.score === 100, 'agentFiles: robots + sitemap = 100 anche senza llms.txt (avuto ' + senzaLlms.score + ')');
+  const conLlms = analyzeAgentFiles({ robotsTxt: true, sitemap: true, llmsTxt: true, skillMd: false, mcpJson: false, agentSkills: false });
+  ok(conLlms.score === senzaLlms.score, 'agentFiles: llms.txt non muove il punteggio');
+  const llmsCheck = conLlms.checks.find((c) => c.name.includes('llms.txt'));
+  ok(llmsCheck && llmsCheck.status === 'info', 'agentFiles: llms.txt è un check informativo');
+  ok(llmsCheck && !llmsCheck.fix, 'agentFiles: nessun fix che promette citazioni per llms.txt');
+  ok(/97%|non viene mai letto/i.test(llmsCheck.detail), 'agentFiles: il dettaglio dichiara l\'uso reale del file');
+  const nudo = analyzeAgentFiles({ robotsTxt: false, sitemap: false, llmsTxt: true, skillMd: true, mcpJson: true, agentSkills: true });
+  ok(nudo.score === 0, 'agentFiles: senza robots né sitemap il punteggio è 0 anche con tutti i file di moda: ' + nudo.score);
+  ok(conLlms.checks.length === 2, 'agentFiles: due check, le convenzioni si sono spostate in agentReady');
 }
 {
   const rd = analyzeReadability({ served: '<div>' + 'parola '.repeat(400) + '</div>', rendered: '<div>' + 'parola '.repeat(1000) + '</div>' });
@@ -146,6 +399,61 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const bad = analyzeTech({ https: false, noindex: true, viewport: false, statusOk: false });
   ok(bad.score === 0, 'tech: tutto problematico = 0');
   ok(bad.checks.find((c) => c.name.startsWith('Indicizz')).status === 'crit', 'tech: noindex è critico');
+}
+{
+  // agentReady — informativa per scelta: nessuna evidenza che questi segnali correlino
+  // con le citazioni, e pesarli perché sono moderni ripeterebbe l'errore di llms.txt.
+  const vuoto = analyzeAgentReady({
+    contentUsage: { source: null, raw: null },
+    botAuth: { browserOk: true, aiOk: 5, aiTotal: 5 },
+    webmcp: { rendered: false, api: null },
+    conventions: { skillMd: false, mcpJson: false, agentSkills: false },
+  });
+  ok(vuoto.informational === true, 'agentReady: informativa, non pesata');
+  ok(vuoto.checks.length === 4, 'agentReady: quattro check (avuti ' + vuoto.checks.length + ')');
+  ok(vuoto.checks.every((c) => c.status !== 'crit'), 'agentReady: nessun check critico — sono standard nascenti, non difetti');
+
+  const pieno = analyzeAgentReady({
+    contentUsage: { source: 'header', raw: 'train-ai=n, search=y' },
+    botAuth: { browserOk: true, aiOk: 5, aiTotal: 5 },
+    webmcp: { rendered: true, api: 'document.modelContext' },
+    conventions: { skillMd: true, mcpJson: true, agentSkills: true },
+  });
+  ok(pieno.score > vuoto.score, 'agentReady: dichiarare gli standard alza il punteggio informativo');
+  ok(pieno.checks.some((c) => c.detail.includes('train-ai=n')), 'agentReady: il valore AIPREF dichiarato viene mostrato');
+
+  // Web Bot Auth: Beacon NON può verificare la config del WAF dall'esterno e lo dice.
+  const filtrato = analyzeAgentReady({
+    contentUsage: { source: null, raw: null },
+    botAuth: { browserOk: true, aiOk: 1, aiTotal: 5 },
+    webmcp: { rendered: false, api: null },
+    conventions: { skillMd: false, mcpJson: false, agentSkills: false },
+  });
+  const ba = filtrato.checks.find((c) => c.name.includes('Web Bot Auth'));
+  ok(ba && ba.status === 'warn', 'agentReady: divergenza browser/AI segnalata come filtro per user-agent');
+  ok(ba.detail.includes('non può verificare') || ba.limit, 'agentReady: il limite di misura è dichiarato, non nascosto');
+
+  // Nessun rendering JS: WebMCP non è valutabile e non deve risultare "assente".
+  const senzaRender = analyzeAgentReady({
+    contentUsage: { source: null, raw: null },
+    botAuth: { browserOk: true, aiOk: 5, aiTotal: 5 },
+    webmcp: { rendered: false, api: null },
+    conventions: { skillMd: false, mcpJson: false, agentSkills: false },
+  });
+  const mcp = senzaRender.checks.find((c) => c.name.includes('WebMCP'));
+  ok(mcp.status === 'info' && /rendering/i.test(mcp.detail), 'agentReady: senza rendering JS WebMCP è "non valutabile", non "assente"');
+}
+{
+  // parseContentUsage: header o robots.txt, entrambi validi per AIPREF.
+  ok(parseContentUsage(null, 'User-agent: *\nContent-Usage: train-ai=n\n').source === 'robots', 'AIPREF: regola nel robots.txt riconosciuta');
+  ok(parseContentUsage('train-ai=n, search=y', '').source === 'header', 'AIPREF: header HTTP ha precedenza');
+  ok(parseContentUsage(null, 'User-agent: *\nDisallow:\n').source === null, 'AIPREF: nessuna dichiarazione → null');
+}
+{
+  // detectWebmcp: rilevazione testuale sull'HTML renderizzato.
+  ok(detectWebmcp('<script>document.modelContext.registerTool({})</script>') === 'document.modelContext', 'WebMCP: API corrente rilevata');
+  ok(detectWebmcp('<script>navigator.modelContext.registerTool({})</script>') === 'navigator.modelContext', 'WebMCP: API deprecata rilevata');
+  ok(detectWebmcp('<p>parliamo di modelContext in un articolo</p>') === null, 'WebMCP: la parola nel testo non è una registrazione');
 }
 
 // a11y.js — modulo accessibilità (companion): check statici deterministici.
@@ -188,7 +496,8 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     url: 'https://x.com/', host: 'x.com',
     geo: { host: 'x.com', url: 'https://x.com/', overall: 72, categories: {
       access: { score: 100, checks: [] }, agentFiles: { score: 60, checks: [{ fix: 'aggiungi llms.txt' }] },
-      structured: { score: 80, checks: [] }, readability: { score: 50, checks: [] }, offsite: { score: 100, checks: [] },
+      structured: { score: 80, checks: [] }, readability: { score: 50, checks: [] }, answerability: { score: 70, checks: [] },
+      offsite: { score: 100, checks: [] },
     } },
     a11y: { result: { score: 67, checks: [{ name: 'Lingua della pagina (lang)', status: 'crit', detail: 'manca', fix: 'aggiungi lang' }] },
       axe: { ok: true, counts: { violations: 1, passes: 5, incomplete: 0 }, findings: [{ id: 'image-alt', status: 'crit', impact: 'critical', help: 'Le immagini devono avere alt', helpUrl: 'https://x', nodes: 3, failureSummary: 'Fix: add alt', remedy: { why: 'perché', before: '<img src="a">', after: '<img src="a" alt="x">' } }] } },
@@ -203,6 +512,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // degrado: perf non disponibile (chiave PSI mancante) → non deve rompere
   const partial = toHtmlSuite({ url: 'https://y.com/', host: 'y.com', geo: { ...suite.geo, host: 'y.com' }, a11y: suite.a11y, perf: { ok: false, reason: 'quota' } }, {});
   ok(partial.includes('chiave PSI mancante'), 'suite html: performance assente degrada con nota');
+
+  // fix round 2: gemello di normalize() usato da suiteReport.js — un suite.geo con
+  // cinque categorie (client vecchio, come nel finding 4 di report.js) non deve
+  // stampare "null" ne' colorare di rosso una categoria mai misurata.
+  const fiveCatGeo = { host: 'z.com', url: 'https://z.com/', overall: 50, categories: {
+    access: { score: 100, checks: [] }, agentFiles: { score: 60, checks: [] }, structured: { score: 80, checks: [] },
+    readability: { score: 50, checks: [] }, offsite: { score: 100, checks: [] },
+  } };
+  const suite5 = { ...suite, geo: fiveCatGeo };
+  const html5 = toHtmlSuite(suite5, {});
+  ok(!html5.includes('>null<') && !html5.includes('null%'), 'suite html: categoria assente non stampa "null"');
+  const md5 = toMarkdownSuite(suite5, {});
+  ok(md5.includes('Risposta pronta per le AI: —'), 'suite md: categoria assente mostra un trattino, non "undefined/100"');
 }
 
 // history.js — snapshot + diff (before-after, pure)
@@ -215,6 +537,29 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(d.geo === 10 && d.a11y === 10 && d.perf === 5 && d.axe === -5, 'history: delta corretti (axe -5 = meno violazioni = meglio)');
   const s2 = snapshot({ host: 'y.com', geo: { error: 'x' }, a11y: { result: { score: 40 } } }, 't');
   ok(s2.geo === null && s2.a11y === 40 && s2.perf === null, 'history: campi mancanti/errore → null');
+}
+
+// history: un cambio di profilo pesi non è un cambio del sito. Il delta GEO sparisce.
+{
+  const base = { host: 'x.com', url: 'https://x.com/', geo: { overall: 80, profile: 'EVIDENCE-2026' }, a11y: { result: { score: 60 }, axe: { ok: true, counts: { violations: 3 } } }, perf: { ok: true, result: { score: 90 } } };
+  const s = snapshot(base, '2026-08-04T00:00:00Z');
+  ok(s.profile === 'EVIDENCE-2026', 'history: il profilo pesi entra nello snapshot');
+
+  const stessoProfilo = diff({ geo: 70, a11y: 50, axe: 8, perf: 85, profile: 'EVIDENCE-2026' }, s);
+  ok(stessoProfilo.geo === 10 && !stessoProfilo.profileChanged, 'history: stesso profilo → delta GEO calcolato');
+
+  const altroProfilo = diff({ geo: 70, a11y: 50, axe: 8, perf: 85, profile: 'BEACON' }, s);
+  ok(altroProfilo.profileChanged && altroProfilo.profileChanged.prev === 'BEACON', 'history: profilo diverso segnalato');
+  ok(altroProfilo.geo === undefined, 'history: profilo diverso → nessun delta GEO (non sarebbe confrontabile)');
+  ok(altroProfilo.a11y === 10 && altroProfilo.perf === 5, 'history: accessibilità e performance restano confrontabili (non dipendono dai pesi GEO)');
+
+  // Storico vecchio senza il campo: si assume il profilo precedente, non si mente.
+  const vecchio = diff({ geo: 70, a11y: 50, axe: 8, perf: 85 }, s);
+  ok(vecchio.profileChanged && vecchio.profileChanged.prev === null, 'history: snapshot pre-profilo trattato come profilo diverso');
+
+  // GEO fallita nella scansione attuale: profilo null, ma non c'è un delta da sospendere.
+  const geoFallita = diff({ geo: 70, a11y: 50, axe: 8, perf: 85, profile: 'EVIDENCE-2026' }, { geo: null, a11y: 60, axe: 5, perf: 90, profile: null });
+  ok(!geoFallita.profileChanged && geoFallita.a11y === 10, 'history: GEO fallita → nessun avviso di cambio profilo');
 }
 
 // guard.js — rate-limit + Turnstile (inerti senza env)
@@ -313,16 +658,34 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(pl.length === 2, 'link: dedup + solo interni (attesi 2, avuti ' + pl.length + ')');
 }
 
-// crawl.js — aggregazione: site-level dalla home, page-level mediate
+// crawl.js — aggregazione: site-level dalla home, page-level mediate; answerability è
+// page-level e può essere unmeasured su singole pagine (esce dalla media, non vale 0)
 {
-  const home = { url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 60 }, structured: { score: 80 }, readability: { score: 40 }, offsite: { score: 100 } } };
-  const pages = [{ structured: 60, readability: 80 }, { structured: 40, readability: 60 }];
-  const w = { access: 0.25, agentFiles: 0.15, structured: 0.20, readability: 0.25, offsite: 0.15 };
+  const home = { url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 60 }, structured: { score: 80 }, readability: { score: 40 }, offsite: { score: 100 }, answerability: { score: 50 } } };
+  const pages = [{ structured: 60, readability: 80, answerability: 70 }, { structured: 40, readability: 60, answerability: null }];
+  const w = { access: 0.18, agentFiles: 0.05, structured: 0.15, readability: 0.22, offsite: 0.15, answerability: 0.25 };
   const a = aggregate(home, pages, w);
   ok(a.categories.access === 100, 'access resta site-level (home)');
   ok(a.categories.structured === 60, 'structured = media(80,60,40)=60: ' + a.categories.structured);
   ok(a.categories.readability === 60, 'readability = media(40,80,60)=60: ' + a.categories.readability);
-  ok(a.overall > 0 && a.overall <= 100, 'overall di sito nel range: ' + a.overall);
+  ok(a.categories.answerability === 60, 'answerability = media(50,70) ignorando la pagina non misurata: ' + a.categories.answerability);
+  ok(a.overall > 0 && a.overall <= 100, 'overall di sito nel range con sei categorie: ' + a.overall);
+
+  // Tutte le pagine non misurate: la categoria esce dal denominatore, non vale 0.
+  const soloBrevi = aggregate({ url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 100 }, structured: { score: 100 }, readability: { score: 100 }, offsite: { score: 100 }, answerability: { score: 0, unmeasured: true } } }, [], w);
+  ok(soloBrevi.overall === 100, 'answerability tutta non misurata esce dalla media (atteso 100, avuto ' + soloBrevi.overall + ')');
+
+  // fix round 1: un modulo site-level unmeasured (es. offsite quando Common Crawl e' giu)
+  // deve uscire dalla media come null, non entrare a punteggio pieno (allineato ad audit.js).
+  const offsiteGiu = aggregate({ url: 'https://x.com/', categories: { access: { score: 100 }, agentFiles: { score: 100 }, structured: { score: 100 }, readability: { score: 100 }, answerability: { score: 100 }, offsite: { score: 60, unmeasured: true } } }, [], w);
+  ok(offsiteGiu.categories.offsite === null, 'offsite unmeasured esce come null, non 60: ' + offsiteGiu.categories.offsite);
+  ok(offsiteGiu.overall === 100, 'offsite unmeasured esclusa dal peso (atteso 100, avuto ' + offsiteGiu.overall + ')');
+}
+
+// audit.js — answerability è fra le categorie pesate e il profilo viaggia nel risultato
+{
+  ok(Object.keys(CATEGORY_LABELS).includes('answerability'), 'audit: answerability è fra le categorie pesate');
+  ok(Object.keys(CATEGORY_LABELS).length === 6, 'audit: sei categorie pesate (avute ' + Object.keys(CATEGORY_LABELS).length + ')');
 }
 
 // report.js — export MD/HTML (funzioni pure)
@@ -332,6 +695,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     agentFiles: { score: 60, checks: [{ fix: 'aggiungi llms.txt' }] },
     structured: { score: 80, checks: [] },
     readability: { score: 50, checks: [] },
+    answerability: { score: 70, checks: [] },
     offsite: { score: 100, checks: [] },
   } };
   const nm = normalize(fake);
@@ -344,6 +708,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // aggregato (crawl): normalize gestisce anche r.aggregate
   const crawlLike = { host: 'y.com', url: 'https://y.com/', pagesAnalyzed: 3, aggregate: { overall: 65, categories: { access: 80, agentFiles: 40, structured: 70, readability: 60, offsite: 100 } }, home: { categories: {} } };
   ok(normalize(crawlLike).kind === 'sito' && normalize(crawlLike).overall === 65, 'normalize: risultato crawl (sito)');
+
+  // fix round 1: payload con una categoria mancante (client con stato vecchio, pre-answerability)
+  // non deve lanciare - la chiave assente diventa null, come una categoria non misurata.
+  const fiveCats = { host: 'z.com', url: 'https://z.com/', overall: 50, categories: {
+    access: { score: 100, checks: [] }, agentFiles: { score: 60, checks: [] }, structured: { score: 80, checks: [] },
+    readability: { score: 50, checks: [] }, offsite: { score: 100, checks: [] },
+  } };
+  const nm5 = normalize(fiveCats);
+  ok(nm5.scores.answerability === null, 'normalize: categoria assente diventa null, non lancia: ' + nm5.scores.answerability);
+  const md5 = toMarkdown(fiveCats);
+  ok(md5.includes('| — | —'), 'markdown: categoria non misurata mostra un trattino, non "undefined/100"');
+  const html5 = toHtml(fiveCats);
+  ok(!html5.includes('undefined'), 'html: categoria non misurata non stampa "undefined"');
 }
 
 // llmstxt.js — brand & raggruppamento (funzioni pure)
@@ -385,7 +762,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const { msg, normalizeLang, ENGINE_LANGS } = await import('./src/messages/index.js');
   ok(ENGINE_LANGS.length === 6 && normalizeLang('de') === 'de' && normalizeLang('xx') === 'it' && normalizeLang(undefined) === 'it', 'i18n: whitelist lingue (valore ignoto → it)');
   ok(msg('en', 'verdict.good') === 'Good' && msg('it', 'verdict.good') === 'Buono', 'i18n: dizionario en compilato');
-  ok(msg('en', 'access.robots.detail', { allowed: 3, total: 5 }) === '3/5 AI crawlers allowed', 'i18n: interpolazione {parametri}');
+  ok(msg('en', 'access.training.detail', { allowed: 3, total: 5 }) === '3/5 allowed in robots.txt', 'i18n: interpolazione {parametri}');
   ok(msg('de', 'verdict.good') === 'Gut', 'i18n: dizionario de compilato');
   ok(msg('xx', 'verdict.good') === 'Buono' && msg('it', 'chiave.inesistente') === 'chiave.inesistente', 'i18n: lingua ignota → italiano; chiave ignota → chiave');
 

@@ -16,10 +16,12 @@ export function normalize(r, lang = 'it') {
   if (r.aggregate) {
     // risultato di crawlSite: categorie già numeriche, fix dalla home
     const fixes = collectFixes(r.home, lang);
-    return { host: r.host, url: r.url, kind: 'sito', pages: r.pagesAnalyzed, overall: r.aggregate.overall, scores: r.aggregate.categories, fixes };
+    return { host: r.host, url: r.url, kind: 'sito', pages: r.pagesAnalyzed, overall: r.aggregate.overall, scores: r.aggregate.categories, profile: r.profile || r.home?.profile || null, fixes };
   }
-  const scores = Object.fromEntries(Object.keys(CATEGORY_LABELS).map((k) => [k, r.categories[k].score]));
-  return { host: r.host, url: r.url, kind: 'pagina', pages: 1, overall: r.overall, scores, fixes: collectFixes(r, lang) };
+  // `?.score ?? null`: una categoria assente (payload client non aggiornato, meno
+  // chiavi di CATEGORY_LABELS) va trattata come non misurata, non deve lanciare.
+  const scores = Object.fromEntries(Object.keys(CATEGORY_LABELS).map((k) => [k, r.categories[k]?.score ?? null]));
+  return { host: r.host, url: r.url, kind: 'pagina', pages: 1, overall: r.overall, scores, profile: r.profile || null, fixes: collectFixes(r, lang) };
 }
 function collectFixes(auditLike, lang = 'it') {
   const out = [];
@@ -40,11 +42,16 @@ export function toMarkdown(r, { date = '', lang = 'it' } = {}) {
   md += `**${t('report.scoreLine', { kind, score: d.overall })}** (${verdict(d.overall, lang)})\n\n`;
   md += `- URL: ${d.url}\n- ${t('report.pages')}: ${d.pages}\n${date ? `- ${t('report.date')}: ${date}\n` : ''}\n`;
   md += `## ${t('report.categories')}\n\n${t('report.tableHeader')}\n|---|--:|---|\n`;
-  for (const [k, label] of Object.entries(labels)) md += `| ${label} | ${d.scores[k]}/100 | ${verdict(d.scores[k], lang)} |\n`;
+  for (const [k, label] of Object.entries(labels)) {
+    const s = d.scores[k];
+    // null = categoria non misurata (es. answerability di sito senza pagine valide): niente punteggio inventato, niente verdetto.
+    md += s == null ? `| ${label} | — | — |\n` : `| ${label} | ${s}/100 | ${verdict(s, lang)} |\n`;
+  }
   if (d.fixes.length) {
     md += `\n## ${t('report.actions')}\n\n`;
     for (const f of d.fixes.slice(0, 10)) md += `- **${f.cat}** — ${f.fix}\n`;
   }
+  if (d.profile) md += `\n*${t('report.profile', { profile: d.profile })}*\n`;
   md += `\n---\n*${t('report.md.footer')}*\n`;
   return md;
 }
@@ -56,6 +63,8 @@ export function toHtml(r, { date = '', lang = 'it' } = {}) {
   const color = (s) => (s >= 80 ? '#2E8B5F' : s >= 60 ? '#B4841F' : s >= 40 ? '#C77D2E' : '#C0492F');
   const rows = Object.entries(labels).map(([k, label]) => {
     const s = d.scores[k];
+    // null = categoria non misurata: nessun colore/barra calcolati su un numero inesistente.
+    if (s == null) return `<tr><td>${label}</td><td class="n">—</td><td><div class="bar"></div></td></tr>`;
     return `<tr><td>${label}</td><td class="n" style="color:${color(s)}">${s}</td>
       <td><div class="bar"><i style="width:${s}%;background:${color(s)}"></i></div></td></tr>`;
   }).join('');
@@ -87,6 +96,6 @@ export function toHtml(r, { date = '', lang = 'it' } = {}) {
   <div class="meta">${d.url} · ${t('report.pagesShort', { n: d.pages })}${date ? ' · ' + date : ''}</div>
   <table>${rows}</table>
   ${fixes}
-  <footer>${t('report.html.footer')}</footer>
+  <footer>${d.profile ? t('report.profile', { profile: d.profile }) + ' · ' : ''}${t('report.html.footer')}</footer>
 </body></html>`;
 }

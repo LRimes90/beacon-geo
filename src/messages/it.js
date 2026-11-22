@@ -8,6 +8,7 @@ export const it = {
   'category.agentFiles': 'File per agenti e AI',
   'category.structured': 'Dati strutturati e SEO',
   'category.readability': 'Leggibilità per le macchine',
+  'category.answerability': 'Risposta pronta per le AI',
   'category.offsite': 'Visibilità off-site',
   'category.rights': 'Segnali e diritti AI',
   'category.tech': 'Fondamentali tecnici',
@@ -25,21 +26,24 @@ export const it = {
   'notice.maybeSpa': "La pagina serve pochissimo HTML: probabilmente carica i contenuti via JavaScript. Riprova con il rendering JS per un'analisi accurata.",
 
   // ---- ① Accesso AI ----
-  'access.robots.name': 'Crawler AI ammessi (robots.txt)',
-  'access.robots.detail': '{allowed}/{total} crawler AI ammessi',
-  'access.robots.fix': 'Rimuovi i Disallow che bloccano GPTBot/ClaudeBot/PerplexityBot ecc. dal robots.txt',
+  'access.retrieval.name': 'Crawler di retrieval live ammessi',
+  'access.retrieval.detail': '{allowed}/{total} ammessi nel robots.txt (bloccati: {blocked})',
+  'access.retrieval.fix': 'Ammetti OAI-SearchBot, ChatGPT-User, Claude-User e PerplexityBot: sono quelli che leggono la pagina quando un utente chiede di te',
+  'access.training.name': 'Crawler di training ammessi',
+  'access.training.detail': '{allowed}/{total} ammessi nel robots.txt',
+  'access.training.note': 'bloccarli è una scelta legittima e non riduce le citazioni di oggi: gli archivi di training sono già raccolti. Google-Extended esclude solo il training di Gemini e Vertex AI, non tocca ranking né AI Overviews',
   'access.live.name': 'Raggiungibilità live (fetch impersonato)',
   'access.live.detail': '{ok}/{total} user-agent hanno ricevuto la pagina',
   'access.live.fix': 'Rimuovi blocchi lato server/WAF/Cloudflare sugli user-agent AI',
 
   // ---- ② File per agenti e AI ----
-  'agentFiles.base.name': 'File di base (robots, sitemap, llms.txt)',
-  'agentFiles.base.detail': '{have}/3 presenti',
-  'agentFiles.base.missingLlms': ' — manca llms.txt',
-  'agentFiles.base.fix': 'Genera e pubblica /llms.txt (usa: beacon <url> --llms)',
-  'agentFiles.emerging.name': 'Standard agentici emergenti',
-  'agentFiles.emerging.detail': '{have}/3 (skill.md, .well-known/mcp.json, agent-skills)',
-  'agentFiles.emerging.fix': 'Opportunità: aggiungi skill.md e .well-known/mcp.json per essere leggibile dagli agenti',
+  'agentFiles.base.name': 'File di scopribilità (robots.txt, sitemap.xml)',
+  'agentFiles.base.detail': '{have}/2 presenti',
+  'agentFiles.base.fix': 'Pubblica sitemap.xml e dichiaralo nel robots.txt: è così che i crawler di retrieval scoprono le tue URL',
+  'agentFiles.llms.name': 'llms.txt (convenzione, non standard)',
+  'agentFiles.llms.detail.ok': 'presente',
+  'agentFiles.llms.detail.none': 'assente',
+  'agentFiles.llms.note': 'non incide sul punteggio: su 137.210 domini misurati il 97% dei file llms.txt non viene mai letto. Utile come indice per gli assistenti di codice, non per le citazioni',
 
   // ---- ③ Dati strutturati e SEO ----
   'structured.meta.name': 'Title & meta description',
@@ -70,6 +74,25 @@ export const it = {
   'readability.jsdelta.detail': '+{gain} parole dopo il render (servito {served} → render {rendered})',
   'readability.jsdelta.fix': 'Molto contenuto è iniettato via JS: i bot che non eseguono JS non lo vedono. Valuta SSR.',
 
+  // ---- answerability — risposta pronta per le AI ----
+  'answerability.direct.name': 'Risposta diretta dopo il titolo',
+  'answerability.direct.detail': 'prima frase dopo H2/H3: {median} parole (mediana su {sections} sezioni)',
+  'answerability.direct.fix': 'Apri ogni sezione con una frase di risposta sotto le 30 parole, poi sviluppa',
+  'answerability.blocks.name': 'Blocchi estraibili (liste, tabelle)',
+  'answerability.blocks.detail': '{blocks} blocchi su {words} parole ({lists} liste, {tables} tabelle)',
+  'answerability.blocks.fix': 'Trasforma le enumerazioni in liste e i confronti in tabelle con intestazioni',
+  'answerability.paras.name': 'Paragrafi digeribili',
+  'answerability.paras.detail': '{long}/{total} paragrafi oltre le 120 parole',
+  'answerability.paras.fix': 'Spezza i paragrafi lunghi: un concetto per paragrafo, sotto le 120 parole',
+  'answerability.questions.name': 'Titoli in forma di domanda',
+  'answerability.questions.detail': '{have}/{total} titoli H2-H3 in forma di domanda (lingua della pagina: {lang})',
+  'answerability.questions.fix': 'Riformula i titoli come le domande che le persone digitano davvero',
+  'answerability.evidence.name': 'Evidenza citabile',
+  'answerability.evidence.detail': '{count} elementi: {numbers} dati, {quotes} citazioni, {links} link a fonti',
+  'answerability.evidence.fix': 'Aggiungi dati con unità di misura, citazioni e link alle fonti',
+  'answerability.unmeasured.name': 'Contenuto insufficiente per la misura',
+  'answerability.unmeasured.detail': '{words} parole: sotto le 300 questa categoria esce dal punteggio invece di penalizzare la pagina',
+
   // ---- ⑤ Visibilità off-site ----
   'offsite.ccbot.name': 'Accesso a CCBot (Common Crawl)',
   'offsite.ccbot.detail.ok': 'CCBot ammesso dal robots.txt',
@@ -92,6 +115,27 @@ export const it = {
   'rights.signal.detail.ok': 'direttiva Content-Signal presente',
   'rights.signal.detail.none': 'nessuna direttiva Content-Signal',
   'rights.signal.fix': 'Opzionale: usa Content-Signal nel robots.txt per dichiarare consensi (search / ai-input / ai-train)',
+
+  // ---- agentReady — standard d'avanguardia per gli agenti (informativo) ----
+  'category.agentReady': 'Standard d\'avanguardia per gli agenti',
+  'agentReady.usage.name': 'AIPREF Content-Usage (IETF)',
+  'agentReady.usage.detail.ok': 'dichiarato via {source}: {raw}',
+  'agentReady.usage.detail.none': 'nessuna preferenza AIPREF dichiarata',
+  'agentReady.usage.fix': 'Dichiara le preferenze con Content-Usage (es. train-ai=n, search=y) nell\'header HTTP o nel robots.txt: è lo standard IETF che sostituisce TDMRep e Content-Signal',
+  'agentReady.botauth.name': 'Web Bot Auth (RFC 9421)',
+  'agentReady.botauth.detail.filtered': 'il sito filtra per user-agent: {aiOk}/{aiTotal} user-agent AI ricevono la pagina, il browser sì',
+  'agentReady.botauth.detail.uniform': 'nessuna differenza fra user-agent browser e AI',
+  'agentReady.botauth.limit': 'Beacon non può verificare dall\'esterno se il tuo edge verifica le firme: è il bot che firma, non il sito',
+  'agentReady.botauth.fix': 'Sostituisci i blocchi per user-agent con la verifica della firma (header Signature-Agent + JWKS): il nome dell\'user-agent è dichiarabile da chiunque, la firma no',
+  'agentReady.webmcp.name': 'WebMCP (W3C, sperimentale)',
+  'agentReady.webmcp.detail.ok': 'tool registrati nella pagina ({api})',
+  'agentReady.webmcp.detail.none': 'nessun tool WebMCP dichiarato',
+  'agentReady.webmcp.detail.norender': 'non valutabile senza rendering JS (usa --js)',
+  'agentReady.webmcp.deprecated': 'API deprecata da Chrome 150: passa a document.modelContext',
+  'agentReady.webmcp.fix': 'Sperimentale: esponi le azioni del sito agli agenti con document.modelContext.registerTool()',
+  'agentReady.conventions.name': 'Convenzioni di fatto (skill.md, mcp.json, agent-skills)',
+  'agentReady.conventions.detail': '{have}/3 presenti',
+  'agentReady.conventions.fix': 'Opzionale: sono convenzioni di fatto, non standard — utili se vuoi essere leggibile dagli agenti che le adottano',
 
   // ---- ⑦ Fondamentali tecnici (informativo) ----
   'tech.https.name': 'HTTPS',
@@ -200,6 +244,7 @@ export const it = {
   'report.pagesShort': '{n} pagina/e',
   'report.md.footer': 'Report generato da Beacon 🔦 — GEO / AI-readiness checker.',
   'report.html.footer': 'Generato da Beacon 🔦 — GEO / AI-readiness checker.',
+  'report.profile': 'Profilo pesi: {profile} — i pesi delle categorie sono pubblici e documentati in weights.json',
 
   // ---- report combinato (src/suiteReport.js) ----
   'suite.eyebrow': 'Report completo — GEO · Accessibilità · Performance',
