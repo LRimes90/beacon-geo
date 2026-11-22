@@ -14,6 +14,22 @@ Nato come replica migliorata di [Pharos](https://pharos.verso.solutions) (GEO / 
 
 I punteggi **non si sommano**: misurano dimensioni diverse, quindi restano affiancati.
 
+## Categorie GEO e pesi (profilo EVIDENCE-2026)
+Il punteggio GEO somma sei categorie pesate. I pesi seguono l'evidenza empirica 2025-2026, non la replica di un altro strumento (dettaglio e profili storici in `weights.json`).
+
+| Categoria | Peso | Fonte |
+|---|---|---|
+| `answerability` (risposta pronta per le AI) | 0.25 | tabelle e liste citate 2,5x; GEO paper KDD 2024, +40% |
+| `readability` (leggibilità macchina) | 0.22 | Vercel/MERJ, 500M fetch di GPTBot: nessun JavaScript eseguito |
+| `access` (accesso AI) | 0.18 | BuzzStream: il 95% delle pagine citate bloccava GPTBot nel robots, quindi il fetch live pesa più del robots.txt |
+| `structured` (dati strutturati e SEO) | 0.15 | Ahrefs: JSON-LD a -4,6% sugli AI Overviews |
+| `offsite` (menzioni fuori sito) | 0.15 | Ahrefs, 75k brand: menzioni r=0.664; peso contenuto perché CCBot e Common Crawl sono un proxy debole |
+| `agentFiles` (scopribilità: robots.txt, sitemap) | 0.05 | Ahrefs, 137k domini: il 97% dei file llms.txt non viene mai letto |
+
+Tre categorie sono solo informative e non entrano nel voto: `agentReady` (standard d'avanguardia come skill.md, MCP, WebMCP, Web Bot Auth), `rights` (segnali di uso dei contenuti) e `tech`.
+
+`agentFiles` è scesa a 0.05 perché llms.txt valeva ~23 punti su 100 della categoria: il 4,6% del voto finale dipendeva da un file che quasi nessuno legge. Ora il punteggio sta su robots.txt e sitemap.xml; llms.txt resta un check informativo (vedi `weights.json`). In `access`, i crawler di training e quelli di retrieval live sono distinti: bloccare i primi non riduce le citazioni di oggi, bloccare i secondi sì. Se il profilo pesi cambia fra due scansioni, lo storico sospende il delta GEO (`src/history.js`).
+
 ## Web UI
 ```bash
 cd web
