@@ -2,6 +2,8 @@
 
 Data esecuzione: 2026-11-22. Solo richieste GET pubbliche. «Prima» = codice di `main` (profilo BEACON, cinque categorie), «dopo» = ramo `feat/answer-readiness` (profilo EVIDENCE-2026, sei categorie), stesso giorno e stessa rete.
 
+Controllo del 2026-11-22: la colonna «prima» è quello che la produzione mostra oggi. `beacon.lucarimediotti.com/api/audit` dà gli stessi overall di `main` su tutti e 8 i siti. Solo cloudflare.com/learning, rieseguito qualche ora dopo, dà 46 sia in produzione sia su `main` (48 in tabella): varia la pagina, non il codice. La tabella non usa scansioni passate.
+
 Check answerability, nell'ordine: risposta diretta, blocchi estraibili, paragrafi digeribili, titoli in forma di domanda, evidenza citabile.
 
 | Host | Overall prima | Overall dopo | Answerability | Check (g=good, w=warn, c=crit) |
