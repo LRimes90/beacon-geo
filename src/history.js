@@ -28,7 +28,11 @@ export function diff(prev, curr) {
   if (!prev || !curr) return null;
   const d = {};
   const sameProfile = (prev.profile || null) === (curr.profile || null);
-  if (!sameProfile) d.profileChanged = { prev: prev.profile || null, curr: curr.profile || null };
+  // Avviso solo se c'è un voto GEO da entrambe le parti: con la GEO fallita il profilo
+  // è null ma non c'è nessun delta da sospendere, e l'avviso mentirebbe.
+  if (!sameProfile && typeof prev.geo === 'number' && typeof curr.geo === 'number') {
+    d.profileChanged = { prev: prev.profile || null, curr: curr.profile || null };
+  }
   for (const k of ['geo', 'a11y', 'perf']) {
     if (k === 'geo' && !sameProfile) continue;
     if (typeof prev[k] === 'number' && typeof curr[k] === 'number') d[k] = curr[k] - prev[k];

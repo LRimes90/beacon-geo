@@ -556,6 +556,10 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // Storico vecchio senza il campo: si assume il profilo precedente, non si mente.
   const vecchio = diff({ geo: 70, a11y: 50, axe: 8, perf: 85 }, s);
   ok(vecchio.profileChanged && vecchio.profileChanged.prev === null, 'history: snapshot pre-profilo trattato come profilo diverso');
+
+  // GEO fallita nella scansione attuale: profilo null, ma non c'è un delta da sospendere.
+  const geoFallita = diff({ geo: 70, a11y: 50, axe: 8, perf: 85, profile: 'EVIDENCE-2026' }, { geo: null, a11y: 60, axe: 5, perf: 90, profile: null });
+  ok(!geoFallita.profileChanged && geoFallita.a11y === 10, 'history: GEO fallita → nessun avviso di cambio profilo');
 }
 
 // guard.js — rate-limit + Turnstile (inerti senza env)
