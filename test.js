@@ -539,6 +539,25 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(s2.geo === null && s2.a11y === 40 && s2.perf === null, 'history: campi mancanti/errore → null');
 }
 
+// history: un cambio di profilo pesi non è un cambio del sito. Il delta GEO sparisce.
+{
+  const base = { host: 'x.com', url: 'https://x.com/', geo: { overall: 80, profile: 'EVIDENCE-2026' }, a11y: { result: { score: 60 }, axe: { ok: true, counts: { violations: 3 } } }, perf: { ok: true, result: { score: 90 } } };
+  const s = snapshot(base, '2026-08-04T00:00:00Z');
+  ok(s.profile === 'EVIDENCE-2026', 'history: il profilo pesi entra nello snapshot');
+
+  const stessoProfilo = diff({ geo: 70, a11y: 50, axe: 8, perf: 85, profile: 'EVIDENCE-2026' }, s);
+  ok(stessoProfilo.geo === 10 && !stessoProfilo.profileChanged, 'history: stesso profilo → delta GEO calcolato');
+
+  const altroProfilo = diff({ geo: 70, a11y: 50, axe: 8, perf: 85, profile: 'BEACON' }, s);
+  ok(altroProfilo.profileChanged && altroProfilo.profileChanged.prev === 'BEACON', 'history: profilo diverso segnalato');
+  ok(altroProfilo.geo === undefined, 'history: profilo diverso → nessun delta GEO (non sarebbe confrontabile)');
+  ok(altroProfilo.a11y === 10 && altroProfilo.perf === 5, 'history: accessibilità e performance restano confrontabili (non dipendono dai pesi GEO)');
+
+  // Storico vecchio senza il campo: si assume il profilo precedente, non si mente.
+  const vecchio = diff({ geo: 70, a11y: 50, axe: 8, perf: 85 }, s);
+  ok(vecchio.profileChanged && vecchio.profileChanged.prev === null, 'history: snapshot pre-profilo trattato come profilo diverso');
+}
+
 // guard.js — rate-limit + Turnstile (inerti senza env)
 {
   let last;

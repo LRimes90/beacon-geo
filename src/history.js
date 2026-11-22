@@ -14,14 +14,23 @@ export function snapshot(suite, ts) {
   const a11y = suite.a11y && !suite.a11y.error && suite.a11y.result ? suite.a11y.result.score : null;
   const axe = suite.a11y && suite.a11y.axe && suite.a11y.axe.ok ? suite.a11y.axe.counts.violations : null;
   const perf = suite.perf && suite.perf.ok ? suite.perf.result.score : null;
-  return { ts, host: suite.host, url: suite.url, geo, a11y, axe, perf };
+  // Il profilo pesi viaggia con il punteggio: due voti calcolati con pesi diversi
+  // non sono confrontabili, e un delta che non lo dice fa passare un cambio di
+  // taratura per un peggioramento del sito.
+  const profile = suite.geo && !suite.geo.error ? (suite.geo.profile || null) : null;
+  return { ts, host: suite.host, url: suite.url, geo, a11y, axe, perf, profile };
 }
 
 // Delta tra due snapshot. Per i punteggi: positivo = meglio. Per axe (violazioni): negativo = meglio.
+// Se il profilo pesi è cambiato il delta GEO non viene calcolato: accessibilità e
+// performance restano confrontabili perché non dipendono da quei pesi.
 export function diff(prev, curr) {
   if (!prev || !curr) return null;
   const d = {};
+  const sameProfile = (prev.profile || null) === (curr.profile || null);
+  if (!sameProfile) d.profileChanged = { prev: prev.profile || null, curr: curr.profile || null };
   for (const k of ['geo', 'a11y', 'perf']) {
+    if (k === 'geo' && !sameProfile) continue;
     if (typeof prev[k] === 'number' && typeof curr[k] === 'number') d[k] = curr[k] - prev[k];
   }
   if (typeof prev.axe === 'number' && typeof curr.axe === 'number') d.axe = curr.axe - prev.axe;

@@ -62,7 +62,7 @@ export const fr = {
   "Report completo": "Rapport complet",
   "Report completo · GEO · Accessibilità · Performance": "Rapport complet · GEO · Accessibilité · Performance",
   "Riprova con rendering JS": "Réessayer avec le rendu JS",
-  "Rispetto alla scansione precedente": "Par rapport au scan précédent",
+  "Rispetto alla scansione precedente": "Par rapport au scan précédent", "Il profilo dei pesi è cambiato": "Le profil de pondération a changé", "il punteggio GEO non è confrontabile con la scansione precedente.": "le score GEO n'est pas comparable avec l'analyse précédente.",
   "Scansione approfondita non disponibile:": "Scan approfondi non disponible :",
   "Scansione completa →": "Scan complet →",
   "Scansione fallita — riprova tra poco.": "Scan échoué — réessaie dans un instant.",
