@@ -587,6 +587,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
         'cumulative-layout-shift': { numericValue: 0.3, displayValue: '0.3' },
         'total-blocking-time': { numericValue: 150, displayValue: '150 ms' },
         'unused-css-rules': { title: 'Rimuovi CSS inutilizzato', details: { type: 'opportunity', overallSavingsMs: 800 } },
+        'server-response-time': { title: 'Tempo di risposta breve', score: 1, details: { type: 'opportunity', overallSavingsMs: 5 } },
       },
     },
     loadingExperience: { overall_category: 'FAST' },
@@ -595,6 +596,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(s.metrics.find((m) => m.id === 'largest-contentful-paint').status === 'good', 'psi: LCP 2.1s → good');
   ok(s.metrics.find((m) => m.id === 'cumulative-layout-shift').status === 'crit', 'psi: CLS 0.3 → crit');
   ok(s.opportunities[0].savingsMs === 800, 'psi: opportunità estratta e ordinata');
+  ok(!s.opportunities.some((o) => o.title === 'Tempo di risposta breve'), 'psi: audit già superato (score 1) escluso dalle opportunità');
   ok(s.field && s.field.category === 'FAST', 'psi: dato reale utenti (CrUX)');
   ok(summarizePsi({}) === null, 'psi: JSON senza lighthouseResult → null');
 }

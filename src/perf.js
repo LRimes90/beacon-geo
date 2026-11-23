@@ -38,7 +38,8 @@ export function summarizePsi(json) {
     metric(audits, 'speed-index', 'Speed Index'),
   ].filter(Boolean);
   const opportunities = Object.values(audits)
-    .filter((a) => a.details && a.details.type === 'opportunity' && a.details.overallSavingsMs > 0)
+    // score >= 0.9 = audit già superato (PSI lo elenca comunque, es. «risposta server breve ~0 s»)
+    .filter((a) => a.details && a.details.type === 'opportunity' && a.details.overallSavingsMs > 0 && (a.score == null || a.score < 0.9))
     .map((a) => ({ title: a.title, savingsMs: Math.round(a.details.overallSavingsMs) }))
     .sort((a, b) => b.savingsMs - a.savingsMs)
     .slice(0, 6);
