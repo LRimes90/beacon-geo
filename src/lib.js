@@ -1,7 +1,7 @@
 // src/lib.js — rete + parsing HTML (regex-based, MVP senza dipendenze).
 // ponytail: regex invece di cheerio/jsdom — sufficiente per i check dell'MVP;
 // ponytail: upgrade a un parser DOM se i check diventano più fini (es. nesting semantico).
-import { safeFetch, readCapped } from './ssrf-guard.js';
+import { safeFetch, readCapped, assertSafeUrl } from './ssrf-guard.js';
 
 export const BROWSER_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36';
@@ -120,6 +120,34 @@ export async function head(url, { ua = BROWSER_UA, timeout = 8000 } = {}) {
     const { res } = await safeFetch(url, { method: 'GET', headers: { 'User-Agent': ua }, signal: ctrl.signal });
     return { ok: res.ok, status: res.status };
   } catch { return { ok: false, status: 0 }; }
+  finally { clearTimeout(timer); }
+}
+
+// Segue i redirect UNO ALLA VOLTA (validando ogni hop come safeFetch) e ritorna la catena:
+// { ok, hops:[{url,status}], finalUrl }. Serve a contare i salti, cosa che fetchText non
+// espone. Timeout totale breve (default 5 s): il DNS dentro assertSafeUrl sta nella gara.
+export async function traceRedirects(url, { timeout = 5000, maxHops = 6 } = {}) {
+  const ctrl = new AbortController();
+  const work = (async () => {
+    const hops = [];
+    let cur = url;
+    for (let i = 0; i <= maxHops; i++) {
+      await assertSafeUrl(cur);
+      const res = await fetch(cur, { redirect: 'manual', headers: { 'User-Agent': BROWSER_UA }, signal: ctrl.signal });
+      const loc = res.headers.get('location');
+      try { await res.body?.cancel(); } catch { /* corpo non letto: ok */ }
+      if (res.status >= 300 && res.status < 400 && loc) {
+        hops.push({ url: cur, status: res.status });
+        cur = new URL(loc, cur).href;
+        continue;
+      }
+      return { ok: res.status < 400, hops, finalUrl: cur };
+    }
+    return { ok: false, hops, finalUrl: cur };
+  })();
+  let timer;
+  const limit = new Promise((r) => { timer = setTimeout(() => { ctrl.abort(); r({ ok: false, hops: [], finalUrl: url }); }, timeout); });
+  try { return await Promise.race([work.catch(() => ({ ok: false, hops: [], finalUrl: url })), limit]); }
   finally { clearTimeout(timer); }
 }
 

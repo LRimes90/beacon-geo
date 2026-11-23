@@ -6,7 +6,8 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { fetchText, head, parseRobots, normUrl, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
+import { fetchText, head, traceRedirects, parseRobots, normUrl, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
+import { robotsDirectives } from './src/seoTech.js';
 import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeAnswerability, analyzeOffsite, analyzeRights, analyzeTech, analyzeAgentReady, parseContentUsage, detectWebmcp, CATEGORY_LABELS } from './src/analyzers.js';
 import { makeT, normalizeLang } from './src/messages/index.js';
 import { generateLlmsTxt } from './src/llmstxt.js';
@@ -19,6 +20,21 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 
 // i18n: `lang` (default 'it') seleziona la lingua di check, fix e notice — la CLI
 // e le chiamate esistenti restano invariate (fallback italiano).
+// Sonde B3, in parallelo: http:// della stessa pagina, catena di redirect dell'URL
+// analizzato (si ritraccia solo se l'URL ha cambiato indirizzo), variante www/non-www.
+async function seoProbes(url, finalUrl) {
+  const u = new URL(url);
+  const alt = new URL(url);
+  alt.hostname = u.hostname.startsWith('www.') ? u.hostname.slice(4) : 'www.' + u.hostname;
+  const httpUrl = 'http://' + u.host + '/';
+  const [http, www, chain] = await Promise.all([
+    u.protocol === 'https:' ? traceRedirects(httpUrl) : Promise.resolve(null),
+    traceRedirects(alt.origin + '/'),
+    finalUrl !== url ? traceRedirects(url) : Promise.resolve({ ok: true, hops: [], finalUrl }),
+  ]);
+  return { http, www: { ...www, variant: alt.hostname }, chain };
+}
+
 export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   const L = normalizeLang(lang);
   const t = makeT(L);
@@ -38,6 +54,10 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   // 2) robots.txt: quali crawler AI sono ammessi (solo parsing, 0 richieste)
   const robotsAllowed = {};
   for (const ua of AI_CRAWLERS) robotsAllowed[ua] = robotsTxt ? robots.isAllowed(ua, '/') : true;
+
+  // 2b) sonde di rete per i controlli B3 (http→https, catena redirect, www): partono ora
+  // e girano in parallelo al resto della scansione (timeout 5 s ciascuna, mai bloccanti).
+  const probesP = page.ok ? seoProbes(url, page.finalUrl || url) : Promise.resolve(null);
 
   // 3) fetch live impersonando alcuni UA (in parallelo, timeout breve)
   const liveResults = await Promise.all(LIVE_UA.map((ua) => head(url, { ua }).then((r) => [ua, r])));
@@ -106,18 +126,21 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
 
   // fondamentali tecnici (informativo, con allarmi forti)
   const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html) || /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots/i.test(html);
+  const finalUrl = page.finalUrl || url;
+  const seo = { html, headers: page.headers, finalUrl, robotsOk: robotsRes.ok, robotsTxt, probes: await probesP };
   const tech = analyzeTech({
-    https: (page.finalUrl || url).startsWith('https://'),
+    https: finalUrl.startsWith('https://'),
     noindex,
     viewport: /<meta[^>]+name=["']viewport["']/i.test(html),
     statusOk: page.ok,
+    seo,
   }, L);
 
   // avviso quando il risultato rischia di essere fuorviante (non un errore: l'analisi c'è comunque)
   const words = wordCount(html);
   let notice = null;
   if (!page.ok) notice = { type: 'unreachable', msg: t('notice.unreachable') };
-  else if (noindex) notice = { type: 'noindex', msg: t('notice.noindex') };
+  else if (noindex || robotsDirectives(page.headers, '').headerNoindex) notice = { type: 'noindex', msg: t('notice.noindex') };
   else if (words < 60 && !renderJs) notice = { type: 'maybe-spa', msg: t('notice.maybeSpa') };
 
   return { url, host, lang: L, profile: PROFILE, fetchedOk: page.ok, overall, categories: results, rights, agentReady, tech, files, html, notice, render: { active: renderJs, ok: render.ok, reason: render.reason } };
@@ -183,11 +206,13 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
   const overall = wsum ? Math.round(total / wsum) : 0;
 
   const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html) || /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots/i.test(html);
+  // Snapshot: niente header né sonde di rete, i controlli che le richiedono sono omessi.
   const tech = analyzeTech({
     https: url.startsWith('https://'),
     noindex,
     viewport: /<meta[^>]+name=["']viewport["']/i.test(html),
     statusOk: true,
+    seo: { html, headers: null, finalUrl: url, robotsOk: robotsRes.ok, robotsTxt, probes: null },
   }, L);
 
   const words = wordCount(html);
