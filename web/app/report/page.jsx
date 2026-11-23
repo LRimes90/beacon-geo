@@ -3,9 +3,8 @@ import { useState } from 'react';
 import ToolNav from '../nav';
 import Turnstile from '../turnstile';
 import { useLang, Rich } from '../i18n';
-import { rigaCategoria } from './riga.mjs';
+import { LABELS, col, pin, fixesOf, CategoriaGeo, DaSistemare } from '../geo-dettaglio';
 
-const col = (s) => (s >= 80 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : s >= 40 ? 'var(--mid)' : 'var(--crit)');
 const colPerf = (s) => (s >= 90 ? 'var(--good)' : s >= 50 ? 'var(--warn)' : 'var(--crit)');
 
 // delta before-after: per i punteggi positivo=meglio; per le violazioni axe (invert) negativo=meglio
@@ -17,24 +16,13 @@ function DeltaRow({ label, d, invert }) {
   return <li style={{ color: 'var(--muted)' }}><span style={{ color: c }}>{same ? '=' : better ? '▲' : '▼'}</span> {label}: <b style={{ color: c }}>{d > 0 ? '+' : ''}{d}</b></li>;
 }
 
-// nomi categoria GEO: stesse chiavi tradotte di app/page.jsx
-const LABELS = {
-  access: 'Accesso AI', agentFiles: 'File per agenti e AI', structured: 'Dati strutturati e SEO',
-  readability: 'Leggibilità per le macchine', answerability: 'Risposta pronta per le AI', offsite: 'Visibilità off-site',
-};
 // chiamate t con stringa letterale: il test di copertura di test.js le trova e pretende la traduzione
 const verdetto = (t, s) => (s >= 80 ? t('Buono') : s >= 60 ? t('Discreto') : s >= 40 ? t('Da migliorare') : t('Critico'));
 const verdettoPerf = (t, s) => (s >= 90 ? t('Buono') : s >= 50 ? t('Da migliorare') : t('Critico'));
-const PIN = { good: ['pin', '✓'], crit: ['pc', '✕'], bad: ['pc', '✕'], warn: ['pn', '!'] };
-const pin = (s) => PIN[s] || ['pn', '○'];
 const STATO = { good: 'var(--good)', warn: 'var(--warn)', crit: 'var(--crit)' };
 const GRID = 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))'; // a 360 px una colonna; min() evita lo sbordo sotto 240 px (zoom)
-// «Da sistemare»: prima i critici, poi gli avvisi; gli informativi non sono difetti
-const fixesOf = (checks) => [...checks.filter((c) => c.status === 'crit'), ...checks.filter((c) => c.status === 'warn')].map((c) => c.fix).filter(Boolean);
-
 // Sezione di dettaglio sotto i riquadri: cosa è stato analizzato e cosa sistemare.
 function Detail({ title, info, score, c, verdict, desc, children, fixes = [] }) {
-  const { t } = useLang();
   return (
     <section className="rights" style={{ marginTop: 18 }}>
       <div className="rt" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
@@ -43,12 +31,7 @@ function Detail({ title, info, score, c, verdict, desc, children, fixes = [] }) 
       </div>
       <p style={{ fontSize: 13.5, color: 'var(--muted)', maxWidth: '70ch', margin: '6px 0 0' }}>{desc}</p>
       {children}
-      {fixes.length > 0 && (
-        <div style={{ borderTop: '1px solid var(--card-line)', marginTop: 14, paddingTop: 10 }}>
-          <div style={{ font: '600 11px var(--mono)', textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--warn)' }}>{t('Da sistemare')}</div>
-          <ul style={{ marginTop: 8 }}>{fixes.slice(0, 3).map((f, i) => <li key={i}>→ {f}</li>)}</ul>
-        </div>
-      )}
+      <DaSistemare fixes={fixes} />
     </section>
   );
 }
@@ -62,19 +45,7 @@ function GeoDetail({ geo }) {
       desc={t('Quanto il sito è leggibile e citabile da ChatGPT, Perplexity e Google AI: accesso dei crawler, file per gli agenti, dati strutturati, testo leggibile, risposte pronte, presenza fuori dal sito.')}
       fixes={fixesOf(all)}>
       <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: '14px 22px', marginTop: 14 }}>
-        {cats.map((k) => {
-          const cat = geo.categories[k];
-          const checks = cat.checks || [];
-          const riga = rigaCategoria(checks, t);
-          const s = cat.unmeasured ? null : cat.score;
-          return (
-            <div className="cat" key={k}>
-              <div className="top"><span className="lab">{t(LABELS[k])}</span><span className="val" style={{ color: s == null ? 'var(--faint)' : col(s) }}>{s == null ? '—' : s}</span></div>
-              <div className="bar" style={{ height: 7 }}>{s != null && <i style={{ width: s + '%', background: col(s) }} />}</div>
-              <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 6 }}>{riga}</div>
-            </div>
-          );
-        })}
+        {cats.map((k) => <CategoriaGeo key={k} k={k} cat={geo.categories[k]} />)}
       </div>
     </Detail>
   );

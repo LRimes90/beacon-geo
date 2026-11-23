@@ -119,4 +119,6 @@ export const es = {
   "Quanto il sito è leggibile e citabile da ChatGPT, Perplexity e Google AI: accesso dei crawler, file per gli agenti, dati strutturati, testo leggibile, risposte pronte, presenza fuori dal sito.": "Legibilidad y citabilidad del sitio para ChatGPT, Perplexity y Google AI: acceso de crawlers, archivos para agentes, datos estructurados, texto legible, respuestas listas, presencia fuera del sitio.",
   "Controlli WCAG 2.1 sull'HTML servito: lingua, titoli, testi alternativi, etichette dei form, zoom, contrasto.": "Controles WCAG 2.1 en el HTML servido: idioma, encabezados, textos alternativos, etiquetas de formularios, zoom, contraste.",
   "Velocità misurata in laboratorio sui Core Web Vitals, gli stessi indicatori che Google usa per valutare l'esperienza.": "Velocidad medida en laboratorio en los Core Web Vitals, las mismas métricas que Google usa para evaluar la experiencia.",
+  // ---- home: dettaglio per categoria ----
+  "Standard d'avanguardia per gli agenti": "Estándares de vanguardia para agentes",
 };

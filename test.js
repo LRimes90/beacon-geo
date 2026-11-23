@@ -1377,14 +1377,14 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
 // report/ui: ogni t('…') letterale di /report ha la voce nei 5 dizionari. La chiave è la
 // stringa italiana: senza voce, il sito inglese mostra l'italiano e nessun errore lo segnala.
 {
-  const src = ['./web/app/report/page.jsx', './web/app/report/riga.mjs'].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+  const src = ['./web/app/report/page.jsx', './web/app/report/riga.mjs', './web/app/geo-dettaglio.jsx', './web/app/page.jsx'].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const chiavi = [...src.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'"));
   ok(chiavi.length > 20, `report/ui: chiavi t() estratte (${chiavi.length})`);
   const diz = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
   const mancanti = Object.entries(diz).flatMap(([l, d]) => chiavi.filter((k) => !d[k]).map((k) => l + ': ' + k));
   ok(mancanti.length === 0, `report/ui: ogni t('…') tradotto in en de fr es pt (mancanti: ${mancanti.slice(0, 4).join(' | ')})`);
   // le etichette di categoria passano da t(LABELS[k]): dinamiche, la regex sopra non le vede
-  for (const f of ['./web/app/report/page.jsx', './web/app/page.jsx']) {
+  for (const f of ['./web/app/geo-dettaglio.jsx']) {
     const blocco = (fs.readFileSync(f, 'utf8').match(/const LABELS = \{([^}]*)\}/) || [])[1] || '';
     const etichette = [...blocco.matchAll(/:\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1]);
     ok(etichette.length === 6, `report/ui: ${f} ha 6 etichette LABELS (${etichette.length})`);
@@ -1404,6 +1404,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(!soloInfo.includes('0/0') && soloInfo.includes('Non misurato'), `report/riga: categoria solo-info senza «0/0» e con il nome («${soloInfo}»)`);
   const misto = rigaCategoria([{ name: 'A', status: 'good' }, { name: 'B', status: 'warn' }, { name: 'C', status: 'crit' }], id);
   ok(misto === '1/3 controlli ok · B, C', `report/riga: problemi elencati dopo il conteggio («${misto}»)`);
+}
+
+// home: il dettaglio per categoria viene dagli stessi componenti di /report (un solo file, due pagine)
+{
+  const home = fs.readFileSync('./web/app/page.jsx', 'utf8');
+  const rep = fs.readFileSync('./web/app/report/page.jsx', 'utf8');
+  for (const [nome, src] of [['home', home], ['report', rep]]) {
+    ok(/from '(\.\/|\.\.\/)geo-dettaglio'/.test(src) && src.includes('CategoriaGeo') && src.includes('DaSistemare'), `${nome}: usa CategoriaGeo e DaSistemare condivisi`);
+    ok(!/const LABELS = \{/.test(src), `${nome}: niente copia locale di LABELS`);
+  }
+  ok(home.includes('res.agentReady') && home.includes("t(\"Standard d'avanguardia per gli agenti\")"), 'home: mostra agentReady come sezione informativa');
+  const ar = analyzeAgentReady({}, 'it');
+  ok(ar.informational === true, 'agentReady: informativo nel motore (la home non lo mette tra le categorie col punteggio)');
 }
 
 // rifiniture /report (minori della review finale)
