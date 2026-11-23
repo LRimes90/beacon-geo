@@ -476,17 +476,23 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(by(seo({ html: og4 + '<meta property="og:image:alt" content="a">' }), 'Open Graph').status === 'good', 'seo B4: OG completo = good');
   ok(/og:image/.test(by(seo({ html: '<meta property="og:title" content="t">' }), 'Open Graph').detail), 'seo B4: OG incompleto elenca i mancanti');
   {
-    // safeFetch.hops e traceRedirects: fetch simulato su IP pubblico letterale (niente DNS né rete).
-    const realF = globalThis.fetch;
-    const R = { 'http://93.184.216.34/': [301, 'https://93.184.216.34/'], 'https://93.184.216.34/': [302, 'https://93.184.216.34/it'], 'https://93.184.216.34/it': [200, null] };
-    globalThis.fetch = async (u) => { const [status, loc] = R[u]; return new Response('', { status, headers: loc ? { location: loc } : {} }); };
+    // safeFetch.hops (su cui poggia traceRedirects): safeFetch non usa globalThis.fetch ma
+    // pinnedFetch, quindi server locale. Il guard vede un IP pubblico finto (resolver di test),
+    // la connessione va a 127.0.0.1 (`_lookup` di test): niente DNS né rete esterna.
+    const http = await import('node:http');
+    const R = { '/': [301, '/a'], '/a': [302, '/it'], '/it': [200, null] };
+    const srv = http.createServer((q, s) => { const [st, loc] = R[q.url] || [404, null]; s.writeHead(st, loc ? { location: loc } : {}); s.end('x'); });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const base = `http://b3.test:${srv.address().port}`;
+    const loop = (h, o, cb) => { if (typeof o === 'function') { cb = o; o = {}; } o.all ? cb(null, [{ address: '127.0.0.1', family: 4 }]) : cb(null, '127.0.0.1', 4); };
+    __setResolverForTests(async () => [{ address: '93.184.216.34', family: 4 }]);
     try {
-      const tr = await traceRedirects('http://93.184.216.34/');
-      ok(tr.ok && tr.hops.length === 2 && tr.hops[0].status === 301 && tr.finalUrl.endsWith('/it'), 'seo B3: traceRedirects conta i salti via safeFetch');
-      const zero = await traceRedirects('https://93.184.216.34/it');
-      ok(zero.ok && zero.hops.length === 0, 'seo B3: nessun salto = hops vuoto');
+      const tr = await safeFetch(base + '/', { _lookup: loop });
+      ok(tr.res.status === 200 && tr.hops.length === 2 && tr.hops[0].status === 301 && tr.finalUrl.endsWith('/it'), 'seo B3: safeFetch conta i salti (base di traceRedirects)');
+      const zero = await safeFetch(base + '/it', { _lookup: loop });
+      ok(zero.hops.length === 0, 'seo B3: nessun salto = hops vuoto');
       ok((await traceRedirects('http://127.0.0.1/')).ok === false, 'seo B3: IP interno bloccato dal guard anche nella sonda');
-    } finally { globalThis.fetch = realF; }
+    } finally { __setResolverForTests(null); srv.close(); }
   }
   ok(by(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true, seo: { robotsOk: true, robotsTxt: '', finalUrl: 'https://e.it/', html: '', headers: null, probes: null } }, 'en'), 'Canonical').detail.length > 0, 'seo: i18n en');
 }
