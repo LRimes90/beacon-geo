@@ -99,16 +99,18 @@ export async function assertSafeUrl(raw) {
 // non basta — un 30x verso l'interno lo bypasserebbe).
 export async function safeFetch(url, { maxRedirects = 5, ...init } = {}) {
   let current = url;
+  const hops = []; // salti seguiti, [{ url, status }]: li usa la catena redirect di seoTech
   for (let i = 0; i <= maxRedirects; i++) {
     await assertSafeUrl(current);
     const res = await fetch(current, { ...init, redirect: 'manual' });
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get('location');
-      if (!loc) return { res, finalUrl: current };
+      if (!loc) return { res, finalUrl: current, hops };
+      hops.push({ url: current, status: res.status });
       current = new URL(loc, current).href;
       continue;
     }
-    return { res, finalUrl: current };
+    return { res, finalUrl: current, hops };
   }
   throw new SsrfError('Troppi redirect', 'ssrf.redirects');
 }

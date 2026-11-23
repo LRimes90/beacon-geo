@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
+import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords, traceRedirects } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
@@ -456,6 +456,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(by(seo({ html: og4 }), 'Open Graph').status === 'info', 'seo B4: OG completo senza image:alt = info (consiglio)');
   ok(by(seo({ html: og4 + '<meta property="og:image:alt" content="a">' }), 'Open Graph').status === 'good', 'seo B4: OG completo = good');
   ok(/og:image/.test(by(seo({ html: '<meta property="og:title" content="t">' }), 'Open Graph').detail), 'seo B4: OG incompleto elenca i mancanti');
+  {
+    // safeFetch.hops e traceRedirects: fetch simulato su IP pubblico letterale (niente DNS né rete).
+    const realF = globalThis.fetch;
+    const R = { 'http://93.184.216.34/': [301, 'https://93.184.216.34/'], 'https://93.184.216.34/': [302, 'https://93.184.216.34/it'], 'https://93.184.216.34/it': [200, null] };
+    globalThis.fetch = async (u) => { const [status, loc] = R[u]; return new Response('', { status, headers: loc ? { location: loc } : {} }); };
+    try {
+      const tr = await traceRedirects('http://93.184.216.34/');
+      ok(tr.ok && tr.hops.length === 2 && tr.hops[0].status === 301 && tr.finalUrl.endsWith('/it'), 'seo B3: traceRedirects conta i salti via safeFetch');
+      const zero = await traceRedirects('https://93.184.216.34/it');
+      ok(zero.ok && zero.hops.length === 0, 'seo B3: nessun salto = hops vuoto');
+      ok((await traceRedirects('http://127.0.0.1/')).ok === false, 'seo B3: IP interno bloccato dal guard anche nella sonda');
+    } finally { globalThis.fetch = realF; }
+  }
   ok(by(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true, seo: { robotsOk: true, robotsTxt: '', finalUrl: 'https://e.it/', html: '', headers: null, probes: null } }, 'en'), 'Canonical').detail.length > 0, 'seo: i18n en');
 }
 {
