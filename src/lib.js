@@ -118,6 +118,7 @@ export async function head(url, { ua = BROWSER_UA, timeout = 8000 } = {}) {
     // GET leggero (molti server non gestiscono bene HEAD); leggiamo solo lo status.
     // safeFetch applica la validazione anti-SSRF anche qui.
     const { res } = await safeFetch(url, { method: 'GET', headers: { 'User-Agent': ua }, signal: ctrl.signal });
+    try { await res.body?.cancel(); } catch {} // solo lo status: chiude il socket senza scaricare il corpo
     return { ok: res.ok, status: res.status };
   } catch { return { ok: false, status: 0 }; }
   finally { clearTimeout(timer); }

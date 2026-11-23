@@ -6,6 +6,10 @@
 // (un URL pubblico che risponde 30x→127.0.0.1 non deve passare).
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
+import http from 'node:http';
+import https from 'node:https';
+import zlib from 'node:zlib';
+import { Readable, pipeline } from 'node:stream';
 
 // Oltre al messaggio, l'errore porta un `code` e il `detail` che lo ha causato
 // (host, IP, schema). Il messaggio serve ai log e alla CLI e resta in italiano;
@@ -63,6 +67,31 @@ export function isBlockedIp(ip) {
   return true; // formato ignoto → blocca per sicurezza
 }
 
+// Resolver di default (tutti gli indirizzi). Sostituibile SOLO nei test.
+let resolveAll = (host) => lookup(host, { all: true });
+export function __setResolverForTests(fn) { resolveAll = fn || ((host) => lookup(host, { all: true })); }
+
+// Lookup da passare a http(s).request: la risoluzione DNS avviene DENTRO la
+// connessione, quindi l'IP controllato è lo stesso a cui ci si connette (niente
+// finestra per il DNS rebinding). Blocca se UNO qualsiasi degli indirizzi è interno.
+// `resolve(host)` → Promise<[{address, family}]>.
+export function makeSafeLookup(resolve = (h) => resolveAll(h)) {
+  return (host, opts, cb) => {
+    if (typeof opts === 'function') { cb = opts; opts = {}; }
+    resolve(host).then((addrs) => {
+      if (!addrs.length) throw new SsrfError('DNS senza risultati: ' + host, 'ssrf.dnsEmpty', host);
+      for (const a of addrs) {
+        if (isBlockedIp(a.address)) {
+          throw new SsrfError('Host risolve a IP interno: ' + host + ' → ' + a.address, 'ssrf.resolvesInternal', host + ' → ' + a.address);
+        }
+      }
+      // Node 20+ (autoSelectFamily) chiama con opts.all e vuole l'array
+      if (opts && opts.all) cb(null, addrs.map((a) => ({ address: a.address, family: a.family })));
+      else cb(null, addrs[0].address, addrs[0].family);
+    }).catch((e) => cb(e instanceof SsrfError ? e : new SsrfError('DNS irrisolvibile: ' + host, 'ssrf.dnsFail', host)));
+  };
+}
+
 // Valida schema + host, risolve il DNS e verifica TUTTI gli IP restituiti.
 // Ritorna l'URL parsato o lancia SsrfError.
 export async function assertSafeUrl(raw) {
@@ -84,7 +113,7 @@ export async function assertSafeUrl(raw) {
     throw new SsrfError('Host interno non consentito: ' + host, 'ssrf.internalHost', host);
   }
   let addrs;
-  try { addrs = await lookup(host, { all: true }); }
+  try { addrs = await resolveAll(host); }
   catch { throw new SsrfError('DNS irrisolvibile: ' + host, 'ssrf.dnsFail', host); }
   if (!addrs.length) throw new SsrfError('DNS senza risultati: ' + host, 'ssrf.dnsEmpty', host);
   for (const a of addrs) {
@@ -95,6 +124,54 @@ export async function assertSafeUrl(raw) {
   return u;
 }
 
+// Sostituto di fetch che fissa l'IP: usa node:http(s) con il lookup sicuro e
+// l'hostname originale (SNI, certificato e Host restano quelli del sito).
+// Non segue mai i redirect (lo fa safeFetch). `init._lookup` = solo test.
+const NULL_BODY = new Set([204, 205, 304]);
+export function pinnedFetch(url, init = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const headers = {};
+    new Headers(init.headers || {}).forEach((v, k) => { headers[k] = v; });
+    if (!headers['accept-encoding']) headers['accept-encoding'] = 'gzip, deflate, br';
+    const mod = u.protocol === 'https:' ? https : http;
+    const method = (init.method || 'GET').toUpperCase();
+    // Il callback gira in un evento di node:http: un'eccezione qui (Response/Headers su dati
+    // ostili del sito scansionato) sarebbe NON catturata e farebbe cadere il processo per tutti.
+    const req = mod.request(u, { method, headers, lookup: init._lookup || makeSafeLookup(), signal: init.signal }, (inc) => {
+      try { onResponse(inc); } catch (e) { inc.destroy(); reject(e); }
+    });
+    // statusText omesso: nessun consumatore, e un reason phrase ostile fa lanciare Response.
+    const onResponse = (inc) => {
+      const status = inc.statusCode;
+      if (status < 200 || status > 599) { inc.resume(); return reject(new Error('Status HTTP non gestito: ' + status)); }
+      const h = new Headers();
+      for (let i = 0; i < inc.rawHeaders.length; i += 2) {
+        try { h.append(inc.rawHeaders[i], inc.rawHeaders[i + 1]); } catch { /* header malformato: ignorato */ }
+      }
+      if (method === 'HEAD' || NULL_BODY.has(status)) {
+        inc.resume();
+        return resolve(new Response(null, { status, headers: h }));
+      }
+      const enc = String(inc.headers['content-encoding'] || '').toLowerCase().trim();
+      let stream = inc;
+      const dec = enc === 'gzip' || enc === 'x-gzip' ? zlib.createGunzip()
+        : enc === 'deflate' ? zlib.createInflate()
+        : enc === 'br' ? zlib.createBrotliDecompress() : null;
+      if (dec) {
+        // pipeline: se lo stream decompresso viene annullato/distrutto, distrugge anche inc (e il socket)
+        stream = pipeline(inc, dec, () => {});
+        h.delete('content-encoding'); h.delete('content-length');
+      }
+      resolve(new Response(Readable.toWeb(stream), { status, headers: h }));
+    };
+    // timeout di inattività del socket (il `signal` del chiamante resta il tetto complessivo)
+    req.setTimeout(30_000, () => req.destroy(new Error('Timeout socket')));
+    req.on('error', reject);
+    req.end(init.body ?? undefined);
+  });
+}
+
 // fetch con redirect MANUALE: valida l'URL a ogni hop (il front-door check da solo
 // non basta — un 30x verso l'interno lo bypasserebbe).
 export async function safeFetch(url, { maxRedirects = 5, ...init } = {}) {
@@ -102,12 +179,13 @@ export async function safeFetch(url, { maxRedirects = 5, ...init } = {}) {
   const hops = []; // salti seguiti, [{ url, status }]: li usa la catena redirect di seoTech
   for (let i = 0; i <= maxRedirects; i++) {
     await assertSafeUrl(current);
-    const res = await fetch(current, { ...init, redirect: 'manual' });
+    const res = await pinnedFetch(current, { ...init, redirect: 'manual' });
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get('location');
       if (!loc) return { res, finalUrl: current, hops };
       hops.push({ url: current, status: res.status });
       current = new URL(loc, current).href;
+      try { await res.body?.cancel(); } catch {} // libera il socket prima di seguire il redirect
       continue;
     }
     return { res, finalUrl: current, hops };
