@@ -7,7 +7,7 @@ Nato come replica migliorata di [Pharos](https://pharos.verso.solutions) (GEO / 
 | Tool | Pagina | Cosa fa |
 |---|---|---|
 | **GEO checker** | `/` | AI-readiness: accesso crawler AI, file per agenti, dati strutturati, leggibilità macchina, off-site |
-| **Accessibilità** | `/a11y` | Check statici WCAG 2.1 + **axe-core** (opzionale, sul DOM renderizzato) + **remediation prima/dopo senza AI** + bozza **dichiarazione di accessibilità** + **overlay diagnostico** (bookmarklet) |
+| **Accessibilità** | `/a11y` | Check statici WCAG 2.2 + **axe-core** (opzionale, sul DOM renderizzato) + **remediation prima/dopo senza AI** + bozza **dichiarazione di accessibilità** + **overlay diagnostico** (bookmarklet) |
 | **Performance** | `/perf` | Punteggio **Lighthouse** reale + Core Web Vitals via PageSpeed Insights |
 | **AI Act** | `/aiact` | Perimetro del [Reg. (UE) 2024/1689](https://eur-lex.europa.eu/eli/reg/2024/1689/oj): scansione dei segnali di trasparenza in pagina + **autovalutazione a 10 domande** → ambito, obblighi già esigibili, scadenze |
 | **Report completo** | `/report` | GEO + a11y + performance in **una scansione** → PDF/HTML/Markdown brandizzato + **before-after** vs scansione precedente |

@@ -34,7 +34,7 @@ export async function renderHtml(url, { timeout = 20000, ua } = {}) {
   }
 }
 
-// Esegue axe-core (WCAG 2.1 A/AA) nel DOM RENDERIZZATO — l'unico posto dove
+// Esegue axe-core (WCAG 2.2 A/AA) nel DOM RENDERIZZATO — l'unico posto dove
 // contrasto reale, ARIA e focus programmatico sono osservabili. Fallback graceful
 // se playwright o axe-core non sono installati (l'analisi statica procede comunque).
 export async function runAxe(url, { timeout = 25000, ua } = {}) {
@@ -51,7 +51,7 @@ export async function runAxe(url, { timeout = 25000, ua } = {}) {
     await page.goto(url, { waitUntil: 'networkidle', timeout });
     await page.addScriptTag({ content: axe.source });
     const results = await page.evaluate(async () =>
-      window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] } }));
+      window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } }));
     return { ok: true, results };
   } catch (e) {
     return { ok: false, reason: String(e).slice(0, 120) };

@@ -62,7 +62,7 @@ export default function A11y() {
       <main className="wrap">
         <header className="hero">
                     <a className="back-home" href="https://lucarimediotti.com">&larr; {t('Torna a lucarimediotti.com')}</a>
-          <div className="kicker">{t('Accessibilità · WCAG 2.1 · European Accessibility Act')}</div>
+          <div className="kicker">{t('Accessibilità · WCAG 2.2 · European Accessibility Act')}</div>
           <h1><Rich s="Il tuo sito è *accessibile*?" /></h1>
           <p className="lede">{t("Controlli statici a colpo sicuro sull'HTML servito — quelli che si possono verificare in automatico senza margine d'errore.")}</p>
         </header>
@@ -71,11 +71,20 @@ export default function A11y() {
           <input type="text" placeholder={t('iltuosito.it')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito da analizzare')} />
           <button type="submit" className="go" disabled={loading || !url}>{loading ? t('Analizzo…') : t('Controlla →')}</button>
         </form>
-        <label className="opt"><input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} /> {t('Analisi approfondita con axe-core (rendering reale: contrasto, ARIA, ~50% dei criteri)')}</label>
+        <label className="opt"><input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} /> {t('Analisi approfondita con axe-core (pagina renderizzata: contrasto reale, ARIA, dimensione dei target)')}</label>
         <Turnstile onToken={setTk} />
 
         <aside className="notice">
-          <span><strong>{t('Non è un audit di conformità.')}</strong> {t('Anche con axe-core il test automatico copre al massimo ~metà dei criteri WCAG. Tastiera, ordine di focus e senso del contenuto per screen reader richiedono verifica umana.')}</span>
+          <div>
+            <strong>{t('Non è un audit di conformità.')}</strong> {t('Anche con axe-core i test automatici trovano poco più della metà dei problemi reali: il 57% in uno studio su oltre 2.000 audit')} (<a href="https://www.deque.com/blog/automated-testing-study-identifies-57-percent-of-digital-accessibility-issues/" target="_blank" rel="noopener" style={{ color: 'inherit', textDecoration: 'underline', textUnderlineOffset: 3 }}>Deque, 2021</a>). {t('Da verificare a mano:')}
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              <li>{t('navigazione completa con la sola tastiera (Tab, Invio, Esc)')}</li>
+              <li>{t('ordine logico del focus, sempre visibile')}</li>
+              <li>{t('lettura con uno screen reader (NVDA, VoiceOver)')}</li>
+              <li>{t('zoom al 200% senza perdere contenuti')}</li>
+              <li>{t('testi alternativi che descrivono davvero l\'immagine')}</li>
+            </ul>
+          </div>
         </aside>
 
         {err && <p className="err">⚠ {err}</p>}
@@ -92,7 +101,7 @@ export default function A11y() {
             </header>
 
             <section className="rights" style={{ marginTop: 22 }}>
-              <div className="rt">{t('Controlli WCAG 2.1')} <span className="info">— {t("statici, dall'HTML servito")}</span></div>
+              <div className="rt">{t('Controlli WCAG 2.2')} <span className="info">— {t("statici, dall'HTML servito")}</span></div>
               <ul>
                 {a.checks.map((c, i) => (
                   <li key={i}><span className={pin(c.status)}>{mark(c.status)}</span> {c.name} — {c.detail}</li>
@@ -102,7 +111,7 @@ export default function A11y() {
 
             {res.axe && res.axe.ok && (
               <section className="rights" style={{ marginTop: 18 }}>
-                <div className="rt">axe-core · WCAG 2.1 A/AA <span className="info">— {res.axe.counts.violations} {t('violazioni')} · {res.axe.counts.passes} {t('passati')} · {res.axe.counts.incomplete} {t('da verificare a mano')}</span></div>
+                <div className="rt">axe-core · WCAG 2.2 A/AA <span className="info">— {res.axe.counts.violations} {t('violazioni')} · {res.axe.counts.passes} {t('passati')} · {res.axe.counts.incomplete} {t('da verificare a mano')}</span></div>
                 {res.axe.findings.length === 0
                   ? <p style={{ marginTop: 12, color: 'var(--good)', fontSize: 14 }}>✓ {t('Nessuna violazione automatica rilevata da axe-core.')}</p>
                   : <ul className="axelist">

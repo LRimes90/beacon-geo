@@ -3,6 +3,7 @@ import { useState } from 'react';
 import ToolNav from '../nav';
 import Turnstile from '../turnstile';
 import { useLang, Rich } from '../i18n';
+import DeviceSwitch from '../device-switch';
 
 const color = (s) => (s >= 90 ? 'var(--good)' : s >= 50 ? 'var(--warn)' : 'var(--crit)');
 const pin = (st) => (st === 'good' ? 'pin' : st === 'crit' ? 'pc' : 'pn');
@@ -12,7 +13,7 @@ const verdict = (s) => (s >= 90 ? 'Ottimo (Lighthouse >90)' : s >= 50 ? 'Da migl
 export default function Perf() {
   const { t, lang } = useLang(); // lang: inviata all'API → locale PageSpeed nella lingua della UI
   const [url, setUrl] = useState('');
-  const [strategy, setStrategy] = useState('mobile');
+  const [device, setDevice] = useState('mobile');
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState(null);
   const [err, setErr] = useState('');
@@ -22,7 +23,7 @@ export default function Perf() {
     e.preventDefault();
     setLoading(true); setErr(''); setRes(null);
     try {
-      const r = await fetch('/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, strategy, turnstileToken: tk, lang }) });
+      const r = await fetch('/api/perf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, desktop: true, turnstileToken: tk, lang }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || t('Analisi fallita — riprova tra poco.'));
       setRes(data);
@@ -30,7 +31,9 @@ export default function Perf() {
     finally { setLoading(false); }
   }
 
-  const p = res?.result;
+  // l'API restituisce la misura mobile con quella desktop nel campo `desktop`
+  const cur = res && (device === 'desktop' ? res.desktop : res);
+  const p = cur?.result;
 
   return (
     <>
@@ -48,15 +51,14 @@ export default function Perf() {
           <input type="text" placeholder={t('iltuosito.it')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('Indirizzo del sito da analizzare')} />
           <button type="submit" className="go" disabled={loading || !url}>{loading ? t('Misuro…') : t('Misura →')}</button>
         </form>
-        <label className="opt">
-          <input type="checkbox" checked={strategy === 'desktop'} onChange={(e) => setStrategy(e.target.checked ? 'desktop' : 'mobile')} /> {t('Analizza come desktop (default: mobile)')}
-        </label>
         <Turnstile onToken={setTk} />
 
         {err && <p className="err">⚠ {err}</p>}
 
-        {res && !res.ok && (
-          <aside className="notice" style={{ marginTop: 18 }}><span>{t('Misurazione non riuscita:')} {res.reason}</span></aside>
+        {res && <div style={{ marginTop: 22 }}><DeviceSwitch device={device} onChange={setDevice} /></div>}
+
+        {cur && !cur.ok && (
+          <aside className="notice" style={{ marginTop: 18 }}><span>{t('Misurazione non riuscita:')} {cur.reason}</span></aside>
         )}
 
         {p && (
@@ -64,9 +66,9 @@ export default function Perf() {
             <header className="rhead">
               <div style={{ fontFamily: 'var(--serif)', fontWeight: 700, fontSize: 44, color: color(p.score) }}>{p.score}<span style={{ fontSize: 18, color: 'var(--muted)' }}>/100</span></div>
               <div className="rmeta">
-                <div className="host">{res.url}</div>
+                <div className="host">{cur.url}</div>
                 <div className="verdict">{t(verdict(p.score))}</div>
-                <div className="sub">{t('Lighthouse · strategia')} {res.strategy}{p.field ? ` · dati reali utenti: ${p.field.category}` : ''}</div>
+                <div className="sub">{t('Lighthouse · strategia')} {cur.strategy}{p.field ? ` · ${t('dati reali utenti:')} ${p.field.category}` : ''}</div>
               </div>
             </header>
 
