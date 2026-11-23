@@ -152,7 +152,7 @@ export function toMarkdownSuite(suite, { date = '', brand = 'Beacon', lang = 'it
   // perf
   if (suite.perf && suite.perf.ok) {
     const r = suite.perf.result;
-    L.push(`## Performance — ${r.score}/100 (Lighthouse)`, '');
+    L.push(`## Performance — ${r.score}/100 (Lighthouse${suite.perf.strategy ? ' · ' + suite.perf.strategy : ''})`, '');
     r.metrics.forEach((m) => L.push(`- ${m.name}: ${m.detail}`));
     if (r.opportunities.length) { L.push('', `### ${t('suite.perf.opportunities')}`, ''); r.opportunities.forEach((o) => L.push(`- ${o.title} (~${(o.savingsMs / 1000).toFixed(1)}s)`)); }
   } else L.push('## Performance', `${t('suite.unavailable')} ${(suite.perf && (suite.perf.reason || suite.perf.error)) || 'errore'}`);

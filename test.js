@@ -9,6 +9,7 @@ import { summarizePsi } from './src/perf.js';
 import { generateStatement } from './src/statement.js';
 import { remedyFor, REMEDIATION } from './src/remediation.js';
 import { toHtmlSuite, toMarkdownSuite } from './src/suiteReport.js';
+import { auditAll } from './src/suite.js';
 import { snapshot, diff } from './src/history.js';
 import { rateLimit, verifyTurnstile } from './src/guard.js';
 import { renderHtml } from './src/render.js';
@@ -516,7 +517,8 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(md.includes('## GEO') && md.includes('## Accessibilità') && md.includes('## Performance'), 'suite md: 3 sezioni');
   // degrado: perf non disponibile (chiave PSI mancante) → non deve rompere
   const partial = toHtmlSuite({ url: 'https://y.com/', host: 'y.com', geo: { ...suite.geo, host: 'y.com' }, a11y: suite.a11y, perf: { ok: false, reason: 'quota' } }, {});
-  ok(partial.includes('chiave PSI mancante'), 'suite html: performance assente degrada con nota');
+  ok(partial.includes('PageSpeed non disponibile') && !partial.includes('chiave PSI'), 'suite html: performance assente degrada con nota neutra');
+  ok(md.includes('## Performance — 91/100 (Lighthouse · mobile)'), 'suite md: intestazione Performance indica la strategia');
 
   // fix round 2: gemello di normalize() usato da suiteReport.js — un suite.geo con
   // cinque categorie (client vecchio, come nel finding 4 di report.js) non deve
@@ -1394,6 +1396,41 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(!soloInfo.includes('0/0') && soloInfo.includes('Non misurato'), `report/riga: categoria solo-info senza «0/0» e con il nome («${soloInfo}»)`);
   const misto = rigaCategoria([{ name: 'A', status: 'good' }, { name: 'B', status: 'warn' }, { name: 'C', status: 'crit' }], id);
   ok(misto === '1/3 controlli ok · B, C', `report/riga: problemi elencati dopo il conteggio («${misto}»)`);
+}
+
+// rifiniture /report (minori della review finale)
+{
+  const src = fs.readFileSync('./web/app/report/page.jsx', 'utf8');
+  // PSI fallisce per quota/timeout anche CON la chiave: la nota non deve dare la colpa alla chiave
+  ok(!src.includes("t('chiave PSI mancante')") && src.includes("t('PageSpeed non disponibile')"), 'report: nota PSI neutra');
+  // sotto i 240 px utili (zoom 200%) la griglia non deve sbordare
+  ok(src.includes('minmax(min(240px, 100%), 1fr)'), 'report: griglia senza overflow sotto 240 px');
+  // lo storico è solo mobile: con lo switch su Computer la riga delta deve dirlo
+  ok(src.includes("label={`Performance (${t('Dispositivi mobili')})`}"), 'report: delta Performance etichettata mobile');
+  // catalogo motore: la categoria answerability era rimasta in italiano in 5 lingue
+  const UI = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
+  for (const [l, d] of Object.entries(UI)) {
+    ok(msg(l, 'category.answerability') === d['Risposta pronta per le AI'], `i18n motore: category.answerability tradotta in ${l} («${msg(l, 'category.answerability')}»)`);
+  }
+}
+
+// auditAll: con strategy 'desktop' la PSI desktop c'è già, niente seconda chiamata identica.
+// Rete spenta: fetch stub conta solo le chiamate PSI; 127.0.0.1 ferma GEO e a11y al guard SSRF.
+{
+  const realFetch = globalThis.fetch;
+  const psi = [];
+  globalThis.fetch = async (u) => {
+    if (String(u).includes('pagespeedonline')) psi.push(new URL(u).searchParams.get('strategy'));
+    throw new Error('rete spenta nel test');
+  };
+  try {
+    const r = await auditAll('http://127.0.0.1/', { strategy: 'desktop', desktop: true });
+    ok(psi.join(',') === 'desktop', `suite: strategy desktop fa UNA chiamata PSI (${psi.join(',')})`);
+    ok(r.perfDesktop === r.perf, 'suite: perfDesktop riusa perf quando la strategia è già desktop');
+    psi.length = 0;
+    const m = await auditAll('http://127.0.0.1/', { desktop: true });
+    ok(psi.sort().join(',') === 'desktop,mobile' && m.perfDesktop && m.perfDesktop.strategy === 'desktop', `suite: mobile + desktop in parallelo (${psi.join(',')})`);
+  } finally { globalThis.fetch = realFetch; }
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

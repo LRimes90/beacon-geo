@@ -83,7 +83,7 @@ export const es = {
   "analisi HTML servito (no-JS)": "análisis del HTML servido (sin JS)",
   "analisi con rendering JS": "análisis con renderizado JS",
   "campi senza etichetta e la lingua mancante, direttamente sul sito.": "campos sin etiqueta y el idioma ausente, directamente en el sitio.",
-  "chiave PSI mancante": "falta la clave PSI",
+  "PageSpeed non disponibile": "PageSpeed no disponible",
   "controlli statici superati (i \"info\" non contano nel punteggio)": "controles estáticos superados (los \"info\" no cuentan en la puntuación)",
   "da verificare a mano": "a verificar a mano",
   "dopo": "después",

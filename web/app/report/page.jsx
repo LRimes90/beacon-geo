@@ -28,7 +28,7 @@ const verdettoPerf = (t, s) => (s >= 90 ? t('Buono') : s >= 50 ? t('Da migliorar
 const PIN = { good: ['pin', '✓'], crit: ['pc', '✕'], bad: ['pc', '✕'], warn: ['pn', '!'] };
 const pin = (s) => PIN[s] || ['pn', '○'];
 const STATO = { good: 'var(--good)', warn: 'var(--warn)', crit: 'var(--crit)' };
-const GRID = 'repeat(auto-fit, minmax(240px, 1fr))'; // a 360 px diventa una colonna
+const GRID = 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))'; // a 360 px una colonna; min() evita lo sbordo sotto 240 px (zoom)
 // «Da sistemare»: prima i critici, poi gli avvisi; gli informativi non sono difetti
 const fixesOf = (checks) => [...checks.filter((c) => c.status === 'crit'), ...checks.filter((c) => c.status === 'warn')].map((c) => c.fix).filter(Boolean);
 
@@ -103,7 +103,7 @@ function PerfDetail({ perf, device }) {
   const desc = t('Velocità misurata in laboratorio sui Core Web Vitals, gli stessi indicatori che Google usa per valutare l\'esperienza.');
   // PSI desktop/mobile assente o fallito (chiave, quota, risposta senza perfDesktop): solo la nota
   if (!perf || !perf.ok || !perf.result) {
-    return <Detail title="Performance" info={info} desc={desc}><p className="info" style={{ marginTop: 10 }}>{t('chiave PSI mancante')}</p></Detail>;
+    return <Detail title="Performance" info={info} desc={desc}><p className="info" style={{ marginTop: 10 }} title={perf && (perf.reason || perf.error)}>{t('PageSpeed non disponibile')}</p></Detail>;
   }
   const { score, metrics = [], opportunities = [] } = perf.result;
   const nf = new Intl.NumberFormat(lang, { maximumFractionDigits: 1 });
@@ -212,7 +212,7 @@ export default function Report() {
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <Card label="GEO / AI" score={geoScore} sub={geoScore == null ? t('n/d') : 'AI-readiness'} c={col(geoScore || 0)} />
               <Card label={t('Accessibilità')} score={a11yScore} sub={axeV == null ? t('solo statico') : axeV + ' ' + t('violazioni axe')} c={col(a11yScore || 0)} />
-              <Card label="Performance" score={perfScore} sub={perfScore == null ? t('chiave PSI mancante') : 'Lighthouse'} c={colPerf(perfScore || 0)} />
+              <Card label="Performance" score={perfScore} sub={perfScore == null ? t('PageSpeed non disponibile') : 'Lighthouse'} c={colPerf(perfScore || 0)} />
             </div>
 
             <aside className="notice" style={{ marginTop: 18 }}>
@@ -230,7 +230,7 @@ export default function Report() {
                 <ul>
                   <DeltaRow label="GEO" d={res.history.delta.geo} />
                   <DeltaRow label={t('Accessibilità')} d={res.history.delta.a11y} />
-                  <DeltaRow label="Performance" d={res.history.delta.perf} />
+                  <DeltaRow label={`Performance (${t('Dispositivi mobili')})`} d={res.history.delta.perf} />
                   <DeltaRow label={t('Violazioni axe')} d={res.history.delta.axe} invert />
                 </ul>
               </section>

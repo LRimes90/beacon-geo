@@ -254,7 +254,7 @@ export const it = {
   'suite.card.nd': 'n/d',
   'suite.card.staticOnly': 'solo statico',
   'suite.card.axeViolations': '{n} violazioni axe',
-  'suite.card.noPsiKey': 'chiave PSI mancante',
+  'suite.card.noPsiKey': 'PageSpeed non disponibile',
   'suite.a11y.static': 'controlli statici',
   'suite.a11y.passed': 'Controlli statici di base superati.',
   'suite.axe.heading': 'axe-core — {v} violazioni · {p} passati · {i} da verificare',

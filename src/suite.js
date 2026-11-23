@@ -14,14 +14,16 @@ export async function auditAll(rawUrl, { renderJs = false, strategy = 'mobile', 
   // `desktop`: PSI computer in parallelo, per lo switch mobile/computer di /report (istantaneo,
   // tempo totale invariato). Spento di default: il confronto multi-sito non lo usa.
   // Storico e delta restano su `perf` (gli snapshot passati sono mobile).
+  // Con strategy già 'desktop' la seconda chiamata sarebbe identica: si riusa `perf` (quota PSI).
+  const extraDesktop = desktop && strategy !== 'desktop';
   const [geo, a11y, perf, perfDesktop] = await Promise.allSettled([
     audit(url, { renderJs, lang }),
     auditA11y(url, { deep: true, lang }),
     auditPerf(url, { strategy, key: psiKey, lang }),
-    desktop ? auditPerf(url, { strategy: 'desktop', key: psiKey, lang }) : null,
+    extraDesktop ? auditPerf(url, { strategy: 'desktop', key: psiKey, lang }) : null,
   ]);
   const val = (s) => (s.status === 'fulfilled' ? s.value : { error: String(s.reason).slice(0, 140) });
   const r = { url, host, lang, geo: val(geo), a11y: val(a11y), perf: val(perf) };
-  if (desktop) r.perfDesktop = val(perfDesktop);
+  if (desktop) r.perfDesktop = extraDesktop ? val(perfDesktop) : r.perf;
   return r;
 }
