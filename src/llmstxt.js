@@ -1,6 +1,6 @@
 // src/llmstxt.js — GENERATORE di llms.txt (differenziatore vs Pharos).
 // Deriva un llms.txt conforme alla spec (https://llmstxt.org) dai contenuti reali della pagina.
-import { getTitle, getMeta } from './lib.js';
+import { getTitle, getMeta, parseAttrs } from './lib.js';
 
 // Deriva il nome del brand: og:site_name → application-name → title ripulito → dominio.
 export function deriveBrand(html, host) {
@@ -19,9 +19,19 @@ export function deriveBrand(html, host) {
 export function significantLinks(html, origin, max = 40) {
   const out = [];
   const seen = new Set();
-  for (const m of html.matchAll(/<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>([\s\S]*?)<\/a>/gi)) {
-    let href = m[1];
-    const text = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const s = String(html || '');
+  // Apertura e chiusura cercate in un solo passaggio: <a[^>]*href=…>([\s\S]*?)<\/a> ripartiva
+  // da capo a ogni <a senza chiusura (quadratico, ReDoS sul limite di 3 MB).
+  const open = /<a\b([^<>]*)>/gi, close = /<\/a\s*>/gi;
+  let m;
+  while ((m = open.exec(s))) {
+    let href = parseAttrs(m[1]).href;
+    if (!href) continue;
+    close.lastIndex = open.lastIndex;
+    const c = close.exec(s);
+    if (!c) break; // nessuna </a> più avanti: come faceva la regex, non c'è altro da prendere
+    open.lastIndex = close.lastIndex;
+    const text = s.slice(m.index + m[0].length, c.index).replace(/<[^<>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     if (!text || text.length < 3) continue;
     if (/^(#|mailto:|tel:|javascript:)/i.test(href)) continue;
     try { href = new URL(href, origin).href.split('#')[0]; } catch { continue; }
@@ -65,9 +75,12 @@ export function decodeEntities(s) {
 // Le card dei loop (Elementor, WP) infilano titolo + estratto + CTA dentro un solo <a>:
 // nell'llms.txt serve un'etichetta, non l'articolo. Via la CTA, poi taglio a 90 su parola.
 export function linkLabel(text) {
+  // Spazi compressi PRIMA del taglio della CTA: su una lunga fila di spazi \s*(leggi…)
+  // ripartiva da ogni posizione della fila (quadratico, ReDoS).
   let t = decodeEntities(text)
+    .replace(/\s+/g, ' ')
     .replace(/\s*(leggi (la storia|tutto|di più|l'articolo)|scopri di più|continua a leggere)\s*[»→>]*\s*$/i, '')
-    .replace(/\s+/g, ' ').trim();
+    .trim();
   if (t.length > 90) t = t.slice(0, 90).replace(/\s+\S*$/, '') + '…';
   return t;
 }

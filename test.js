@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, jsonLdCount, contentHtml, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords, traceRedirects } from './src/lib.js';
+import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, jsonLdCount, contentHtml, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, bodyHtml, headFlags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords, traceRedirects } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp, SsrfError, makeSafeLookup, pinnedFetch, safeFetch, __setResolverForTests } from './src/ssrf-guard.js';
@@ -19,7 +19,7 @@ import { pagesFromSitemap, pagesFromLinks, aggregate } from './crawl.js';
 import { normalize, toMarkdown, toHtml } from './src/report.js';
 import { auditHtmlSnapshot } from './audit.js';
 import WEIGHTS, { PROFILE } from './weights.mjs';
-import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
+import { deriveBrand, groupBySection, generateLlmsTxt, significantLinks, linkLabel } from './src/llmstxt.js';
 import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
 import { deriveObligations, decideVerdict, assessAiAct, euEvidence, coverage, OBLIGATIONS, QUESTIONS, SHOW_IF } from './src/aiactAssess.js';
 import { QUESTION_TEXT, REQUIRED } from './web/app/aiact/questions.mjs';
@@ -108,6 +108,48 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   }
   ok(contentHtml('a<!-- x -->b<SCRIPT>y</script>c<style>z</STYLE>d<noscript>n</noscript>e') === 'a b c d e', 'contentHtml: blocchi nascosti tolti, maiuscole comprese');
   ok(contentHtml('a<!-- x') === 'a<!-- x', 'contentHtml: blocco senza chiusura lasciato com\'era');
+  // ReDoS, secondo giro: stesso rischio in ogni altra funzione che legge l'HTML della pagina.
+  // Ogni caso è ~1 MB fatto ripetendo un'apertura senza chiusura (o un testo che la regex
+  // rilegge da capo a ogni posizione): col codice vecchio da minuti a ore per caso.
+  // Un seme [prefisso, ripetuto, suffisso] mette prefisso e suffisso una volta sola attorno al blocco ostile.
+  const big = (s) => s.repeat(Math.ceil(1_000_000 / s.length));
+  for (const [nome, f, semi] of [
+    ['getTitle e deriveBrand', (h) => { getTitle(h); deriveBrand(h, 'e.it'); }, ['<title', '<title>']],
+    ['bodyHtml e semanticRatio', (h) => { bodyHtml(h); semanticRatio(h); }, ['<body', '<body>']],
+    ['imgAlt', imgAlt, ['<img']],
+    ['htmlLang e pageLang', (h) => { htmlLang(h); pageLang(h); }, ['<html', '<']],
+    ['wordCount', wordCount, ['<', '<script', '<style']],
+    ['stripTags', stripTags, ['<']],
+    ['links', (h) => links(h, 'e.it'), ['<a', '<a href=']],
+    ['contentWords', contentWords, ['<', '<nav', '<header', '<footer']],
+    ['sections', sections, ['<h2', '<h2>', ['<h2>a</h2>', '<p']]],
+    ['paragraphWords', paragraphWords, ['<p', '<p>']],
+    ['extractableBlocks', extractableBlocks, ['<ul', ['<ul>', '<li>', '</ul>'], ['<ul><li>a</li><li>a</li><li>', 'x<a>', '</li></ul>'], '<table']],
+    ['citableEvidence', (h) => citableEvidence(h, 'e.it'), ['<p', '<p>', '1']],
+    ['analyzeReadability', (h) => analyzeReadability({ served: h }, 'it'), ['<', '<body', '<img']],
+    ['analyzeAnswerability', (h) => analyzeAnswerability({ served: h, host: 'e.it' }, 'it'), ['<body', '<p>uno ', '<h2>uno ', ['<ul>', '<li>uno ', '</ul>']]],
+    ['analyzeStructured', (h) => analyzeStructured(h, 'it'), ['<link rel="alternate" ', '<meta ', '<link ']],
+    ['headFlags', headFlags, ['<meta name="robots" ', '<meta content="noindex ', '<meta ', '<link ']],
+    ['accessibleFormLabels e analyzeA11y', (h) => { accessibleFormLabels(h); analyzeA11y(h, 'it'); }, ['<b aria-hidden="true"', '<b aria-hidden="true">', '<label>', '<label for="a"', '<input', '<html', '<label>x</label><input>']],
+    ['detectAiSignals', (h) => detectAiSignals(h), ['<', '<script', '<style', '<meta ', 'mediapipe']],
+    ['significantLinks', (h) => significantLinks(h, 'https://e.it'), ['<a href="x"', '<a href="x">', '<a ']],
+    ['linkLabel', (h) => linkLabel(h + 'x'), ['&nbsp;', ' ']],
+    ['pagesFromLinks', (h) => pagesFromLinks(h, 'https://e.it'), ['<a', '<a href=']],
+    ['parseContentUsage', (h) => parseContentUsage(null, h), ['\n']],
+  ]) for (const s of semi) {
+    const [pre, rep, post = ''] = Array.isArray(s) ? s : ['', s];
+    const h = pre + big(rep) + post, t0 = Date.now();
+    f(h);
+    const ms = Date.now() - t0;
+    ok(ms < 1000, nome + ' lineare su HTML ostile (' + JSON.stringify(s) + '): ' + ms + ' ms');
+  }
+  // headFlags: i tre segnali di <head> che audit.js leggeva con regex [^>]+ (quadratiche).
+  ok(JSON.stringify(headFlags('<meta name="robots" content="noindex, follow"><meta name="viewport" content="width=device-width"><link rel="license" href="/l">')) === '{"noindex":true,"viewport":true,"license":true}', 'headFlags: i tre segnali letti');
+  ok(headFlags('<meta content="NOINDEX" name="Robots">').noindex === true, 'headFlags: content prima di name, maiuscole comprese');
+  ok(headFlags('<meta name="robots" content="index, follow">').noindex === false, 'headFlags: index non è noindex');
+  ok(headFlags('<meta name="googlebot" content="noindex">').noindex === false, 'headFlags: conta solo il meta robots, come prima');
+  ok(headFlags('<!-- <meta name="robots" content="noindex"> -->').noindex === false, 'headFlags: meta commentato ignorato');
+  ok(JSON.stringify(headFlags('<p>niente</p>')) === '{"noindex":false,"viewport":false,"license":false}', 'headFlags: pagina senza segnali');
   ok(jsonLdCount('<script type="application/ld+json">{}</script><script>var s="<script type=\'x\'>"</script><script type=\'application/ld+json\'>[]</script>') === 2, 'jsonLdCount: due blocchi, virgolette singole comprese');
 ok(jsonLdCount('<script>var s="<script type=\'application/ld+json\'>{}"</script>') === 0, 'jsonLdCount: un tag ld+json dentro una stringa JS non è un blocco');
   ok(jsonLdTypes(html).includes('Organization'), 'tipo JSON-LD rilevato');

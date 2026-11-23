@@ -12,7 +12,7 @@
 // Riferimenti: Reg. (UE) 2024/1689 art. 2 (ambito), 4 (alfabetizzazione), 5 (pratiche
 // vietate), 50 (trasparenza), 99 (sanzioni). Applicabilità: art. 113 + Digital Omnibus.
 
-import { fetchText, has, normUrl } from './lib.js';
+import { fetchText, has, normUrl, contentHtml } from './lib.js';
 import { makeT } from './messages/index.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
@@ -60,7 +60,8 @@ const EMOTION_VENDORS = [
   ['Affectiva', /affectiva|affdex/i],
   ['Hume AI', /api\.hume\.ai/i],
   ['FaceIO', /cdn\.faceio\.net/i],
-  ['MediaPipe Face', /mediapipe.*face|face_mesh/i],
+  // .{0,200} e non .*: con .* ogni "mediapipe" senza "face" rileggeva la riga fino in fondo (quadratico).
+  ['MediaPipe Face', /mediapipe.{0,200}face|face_mesh/i],
   ['Clarifai', /api\.clarifai\.com/i],
 ];
 
@@ -68,7 +69,7 @@ const EMOTION_VENDORS = [
 const PROVENANCE = [
   ['C2PA / Content Credentials', /c2pa|content-credentials|contentauthenticity/i],
   ['IPTC digitalSourceType', /digitalSourceType/i],
-  ['meta ai-generated', /<meta[^>]+name=["'](?:ai-generated|ai-content|generator-ai)["']/i],
+  ['meta ai-generated', /<meta[^<>]+name=["'](?:ai-generated|ai-content|generator-ai)["']/i],
 ];
 
 // Termini di disclosure in 6 lingue. Cerchiamo nel TESTO VISIBILE, non negli attributi:
@@ -99,12 +100,12 @@ const EU_SIGNALS = [
   ['cookie banner GDPR', /gdpr|rgpd|dsgvo/i],
 ];
 
-// Rimuove script/style/tag: cerchiamo la disclosure nel testo che l'utente legge.
+// Rimuove script/style/commenti/tag: cerchiamo la disclosure nel testo che l'utente legge.
+// contentHtml taglia i blocchi in un solo passaggio: <script[\s\S]*?<\/script> ripartiva
+// da capo a ogni <script senza chiusura (quadratico, ReDoS sul limite di 3 MB).
 function visibleText(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
+  return contentHtml(html)
+    .replace(/<[^<>]+>/g, ' ')
     .replace(/\s+/g, ' ');
 }
 
