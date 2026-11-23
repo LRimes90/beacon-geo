@@ -335,4 +335,13 @@ export const es = {
   "aiact.ob.highRiskProvider": "Alto riesgo (proveedor): sistema de gestión de riesgos, gobernanza de datos, registros, documentación, evaluación de la conformidad",
   "aiact.ob.highRiskDeployer": "Alto riesgo (responsable del despliegue): supervisión humana, seguimiento, información a las personas afectadas",
   "aiact.ob.nldp": "Protección de datos: información, base jurídica, decisiones automatizadas — aplicable con independencia del Reglamento de IA",
+  // ---- AI Act: perché di ogni obbligo (era fisso in italiano in deriveObligations) ----
+  "aiact.why.scan": "escaneo: {detail}",
+  "aiact.why.art4": "uso de IA en nombre de la organización",
+  "aiact.why.declared": "declarado",
+  "aiact.why.providerGen": "proveedor de sistema generativo",
+  "aiact.why.deepfake": "contenidos verosímiles sobre personas/eventos reales",
+  "aiact.why.noEditorial": "ninguna responsabilidad editorial declarada",
+  "aiact.why.gpai": "modelo de uso general",
+  "aiact.why.nldp": "tratamiento de datos personales mediante IA",
 };

@@ -355,4 +355,13 @@ export const en = {
   'aiact.ob.highRiskProvider': 'High risk (provider): risk management system, data governance, logs, documentation, conformity assessment',
   'aiact.ob.highRiskDeployer': 'High risk (deployer): human oversight, monitoring, information to affected persons',
   'aiact.ob.nldp': 'Data protection: notice, legal basis, automated decisions — applicable regardless of the AI Act',
+  // ---- AI Act: perché di ogni obbligo (era fisso in italiano in deriveObligations) ----
+  "aiact.why.scan": "scan: {detail}",
+  "aiact.why.art4": "use of AI in the organization's name",
+  "aiact.why.declared": "disclosed",
+  "aiact.why.providerGen": "generative AI system provider",
+  "aiact.why.deepfake": "plausible content about real people/events",
+  "aiact.why.noEditorial": "no editorial responsibility disclosed",
+  "aiact.why.gpai": "general-purpose model",
+  "aiact.why.nldp": "processing of personal data via AI",
 };
