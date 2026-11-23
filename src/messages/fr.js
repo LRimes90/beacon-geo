@@ -10,7 +10,7 @@ export const fr = {
   'category.agentFiles': 'Fichiers pour agents et IA',
   'category.structured': 'Données structurées et SEO',
   'category.readability': 'Lisibilité pour les machines',
-  'category.answerability': 'Risposta pronta per le AI',
+  'category.answerability': 'Réponse prête pour les IA',
   'category.offsite': 'Visibilité off-site',
   'category.rights': 'Signaux et droits IA',
   'category.tech': 'Fondamentaux techniques',

@@ -10,7 +10,7 @@ export const de = {
   'category.agentFiles': 'Dateien für Agenten und KIs',
   'category.structured': 'Strukturierte Daten und SEO',
   'category.readability': 'Lesbarkeit für Maschinen',
-  'category.answerability': 'Risposta pronta per le AI',
+  'category.answerability': 'Antwortbereitschaft für KI',
   'category.offsite': 'Off-Site-Sichtbarkeit',
   'category.rights': 'KI-Signale und -Rechte',
   'category.tech': 'Technische Grundlagen',

@@ -6,7 +6,7 @@ export const en = {
   'category.agentFiles': 'Files for agents and AI',
   'category.structured': 'Structured data and SEO',
   'category.readability': 'Machine readability',
-  'category.answerability': 'Risposta pronta per le AI',
+  'category.answerability': 'AI answer readiness',
   'category.offsite': 'Off-site visibility',
   'category.rights': 'AI signals and rights',
   'category.tech': 'Technical fundamentals',
