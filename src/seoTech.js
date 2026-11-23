@@ -10,9 +10,11 @@ import { getMeta, contentHtml, parseRobots } from './lib.js';
 // Attributi di ogni <tag> trovato (nomi in minuscolo). Usa contentHtml: via commenti/script.
 function tagAttrs(html, tag) {
   const out = [];
-  for (const m of contentHtml(html).matchAll(new RegExp('<' + tag + '\\b([^>]*)>', 'gi'))) {
+  // Regex lineari su HTML ostile (limite 3 MB): [^<>] ferma ogni tentativo al tag successivo,
+  // il lookbehind fa partire il nome solo a inizio parola. Senza, costo quadratico (ReDoS).
+  for (const m of contentHtml(html).matchAll(new RegExp('<' + tag + '\\b([^<>]*)>', 'gi'))) {
     const a = {};
-    for (const x of m[1].matchAll(/([a-zA-Z:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)) a[x[1].toLowerCase()] = x[2] ?? x[3] ?? x[4] ?? '';
+    for (const x of m[1].matchAll(/(?<![a-zA-Z:-])([a-zA-Z:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)) a[x[1].toLowerCase()] = x[2] ?? x[3] ?? x[4] ?? '';
     out.push(a);
   }
   return out;

@@ -73,6 +73,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(getMeta(`<meta name="description" content="Informativa dell'Associazione: dati e finalita.">`, 'description')
        === "Informativa dell'Associazione: dati e finalita.",
      'apostrofo dentro content non tronca la description');
+  ok(getMeta(`<meta content='a "b" c' property="og:title">`, 'og:title') === 'a "b" c', 'getMeta: content prima di property, virgolette miste');
+  ok(getMeta('<META NAME="Description" CONTENT="Prezzi > 10 euro">', 'description') === 'Prezzi > 10 euro', 'getMeta: maiuscole e > dentro il valore');
+  ok(getMeta('<meta data-name="description" content="no"><meta name="description" content="si">', 'description') === 'si', 'getMeta: data-name non conta come name');
+  ok(getMeta('<meta property="og:image:alt" content="alt"><meta property="og:image" content="img">', 'og:image') === 'img', 'getMeta: og:image non pesca og:image:alt');
+  // ReDoS: l'HTML lo sceglie chi lancia la scansione (fino a 3 MB). La vecchia regex impiegava
+  // ~15 s su 200 KB di "<meta" ripetuto, bloccando l'unico processo Node per tutti.
+  for (const [k, h] of [['<meta ripetuto', '<meta'.repeat(200_000)], ['virgolette aperte', '<meta "'.repeat(150_000)], ['tag lungo', '<meta ' + 'a '.repeat(500_000)]]) {
+    const t0 = Date.now();
+    getMeta(h, 'description');
+    ok(Date.now() - t0 < 1000, 'getMeta lineare su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
+  }
   ok(jsonLdTypes(html).includes('Organization'), 'tipo JSON-LD rilevato');
   ok(semanticRatio(html).semantic === 2, 'tag semantici contati (header+main)');
   ok(imgAlt(html).total === 2 && imgAlt(html).withAlt === 1, 'alt immagini contate');
@@ -413,6 +424,12 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const base = seo({});
   ok(base.score === 100 && base.checks.length > 4, 'seo: punteggio tech invariato, check accodati');
   ok(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true }).checks.length === 4, 'seo: senza input i check restano 4');
+  // ReDoS su HTML ostile da ~1 MB: tutti i controlli B1-B4 insieme restano sotto il secondo.
+  for (const [k, h] of [['tag link lungo', '<link ' + 'a'.repeat(1_000_000)], ['<link ripetuto', '<link'.repeat(200_000)], ['<meta ripetuto', '<meta'.repeat(200_000)]]) {
+    const t0 = Date.now();
+    seo({ html: h });
+    ok(Date.now() - t0 < 1000, 'seo: lineare su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
+  }
   // B1
   ok(by(seo({ headers: { 'X-Robots-Tag': 'noindex, nofollow' } }), 'Direttive').status === 'crit', 'seo B1: X-Robots-Tag noindex = crit');
   ok(by(seo({ headers: { 'X-Robots-Tag': 'otherbot: noindex' } }), 'Direttive').status === 'good', 'seo B1: noindex per altro bot ignorato');
