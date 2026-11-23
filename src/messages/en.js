@@ -200,7 +200,7 @@ export const en = {
   'tech.headers.detail.missing': '{have} out of {total} present; missing: {missing}',
   'tech.headers.fix': 'Set the missing headers on the server or CDN (HSTS, CSP, X-Content-Type-Options: nosniff, Referrer-Policy)',
   'tech.jsonldSyntax.name': 'JSON-LD: syntax',
-  'tech.jsonldSyntax.detail.ok': '{count} valid JSON-LD blocks',
+  'tech.jsonldSyntax.detail.ok': 'Valid JSON-LD blocks: {count}',
   'tech.jsonldSyntax.detail.bad': '{bad} blocks out of {count} with syntax errors: search engines ignore them',
   'tech.jsonldSyntax.fix': 'Fix the JSON of application/ld+json blocks (commas, quotes) and verify with the Rich Results Test',
   'tech.jsonldProps.name': 'JSON-LD: required properties',

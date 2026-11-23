@@ -185,7 +185,7 @@ export const de = {
   'tech.headers.detail.missing': '{have} von {total} vorhanden; fehlen: {missing}',
   'tech.headers.fix': 'Setze die fehlenden Header auf dem Server oder CDN (HSTS, CSP, X-Content-Type-Options: nosniff, Referrer-Policy)',
   'tech.jsonldSyntax.name': 'JSON-LD: Syntax',
-  'tech.jsonldSyntax.detail.ok': '{count} gültige JSON-LD-Blöcke',
+  'tech.jsonldSyntax.detail.ok': 'Gültige JSON-LD-Blöcke: {count}',
   'tech.jsonldSyntax.detail.bad': '{bad} Blöcke von {count} mit Syntaxfehlern: Suchmaschinen ignorieren sie',
   'tech.jsonldSyntax.fix': 'Korrigiere das JSON der application/ld+json-Blöcke (Kommas, Anführungszeichen) und überprüfe mit dem Rich Results Test',
   'tech.jsonldProps.name': 'JSON-LD: Pflichteigenschaften',

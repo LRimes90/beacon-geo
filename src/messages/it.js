@@ -202,7 +202,7 @@ export const it = {
   'tech.headers.detail.missing': '{have} su {total} presenti; mancano: {missing}',
   'tech.headers.fix': 'Imposta gli header mancanti sul server o sul CDN (HSTS, CSP, X-Content-Type-Options: nosniff, Referrer-Policy)',
   'tech.jsonldSyntax.name': 'JSON-LD: sintassi',
-  'tech.jsonldSyntax.detail.ok': '{count} blocchi JSON-LD validi',
+  'tech.jsonldSyntax.detail.ok': 'Blocchi JSON-LD validi: {count}',
   'tech.jsonldSyntax.detail.bad': '{bad} blocchi su {count} con errori di sintassi: i motori li ignorano',
   'tech.jsonldSyntax.fix': 'Correggi il JSON dei blocchi application/ld+json (virgole, virgolette) e verifica con il Rich Results Test',
   'tech.jsonldProps.name': 'JSON-LD: proprietà obbligatorie',

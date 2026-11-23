@@ -181,7 +181,7 @@ export const pt = {
   'tech.headers.detail.missing': '{have} em {total} presentes; faltam: {missing}',
   'tech.headers.fix': 'Configure os cabeçalhos faltantes no servidor ou no CDN (HSTS, CSP, X-Content-Type-Options: nosniff, Referrer-Policy)',
   'tech.jsonldSyntax.name': 'JSON-LD: sintaxe',
-  'tech.jsonldSyntax.detail.ok': '{count} blocos JSON-LD válidos',
+  'tech.jsonldSyntax.detail.ok': 'Blocos JSON-LD válidos: {count}',
   'tech.jsonldSyntax.detail.bad': '{bad} blocos em {count} com erros de sintaxe: os motores os ignoram',
   'tech.jsonldSyntax.fix': 'Corrija o JSON dos blocos application/ld+json (vírgulas, aspas) e verifique com o Rich Results Test',
   'tech.jsonldProps.name': 'JSON-LD: propriedades obrigatórias',

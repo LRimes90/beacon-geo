@@ -185,7 +185,7 @@ export const es = {
   'tech.headers.detail.missing': '{have} de {total} presentes; faltan: {missing}',
   'tech.headers.fix': 'Configura las cabeceras faltantes en el servidor o en el CDN (HSTS, CSP, X-Content-Type-Options: nosniff, Referrer-Policy)',
   'tech.jsonldSyntax.name': 'JSON-LD: sintaxis',
-  'tech.jsonldSyntax.detail.ok': '{count} bloques JSON-LD válidos',
+  'tech.jsonldSyntax.detail.ok': 'Bloques JSON-LD válidos: {count}',
   'tech.jsonldSyntax.detail.bad': '{bad} bloques de {count} con errores de sintaxis: los motores los ignoran',
   'tech.jsonldSyntax.fix': 'Corrige el JSON de los bloques application/ld+json (comas, comillas) y verifica con la Rich Results Test',
   'tech.jsonldProps.name': 'JSON-LD: propiedades obligatorias',

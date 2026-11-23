@@ -185,7 +185,7 @@ export const fr = {
   'tech.headers.detail.missing': '{have} sur {total} présents ; manquants : {missing}',
   'tech.headers.fix': 'Configurez les en-têtes manquants sur le serveur ou le CDN (HSTS, CSP, X-Content-Type-Options: nosniff, Referrer-Policy)',
   'tech.jsonldSyntax.name': 'JSON-LD : syntaxe',
-  'tech.jsonldSyntax.detail.ok': '{count} blocs JSON-LD valides',
+  'tech.jsonldSyntax.detail.ok': 'Blocs JSON-LD valides : {count}',
   'tech.jsonldSyntax.detail.bad': '{bad} blocs sur {count} avec erreurs de syntaxe : les moteurs les ignorent',
   'tech.jsonldSyntax.fix': 'Corrigez le JSON des blocs application/ld+json (virgules, guillemets) et vérifiez avec le Rich Results Test',
   'tech.jsonldProps.name': 'JSON-LD : propriétés obligatoires',
