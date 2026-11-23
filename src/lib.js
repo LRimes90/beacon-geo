@@ -453,20 +453,19 @@ export function parseRobots(txt) {
       cur.rules.push({ type: field, path: val });
     }
   }
-  const matchGroup = (ua) => {
-    ua = ua.toLowerCase();
-    let star = null, exact = null;
-    for (const g of groups) for (const a of g.agents) {
-      if (a === '*') star = g;
-      else if (ua.includes(a) || a.includes(ua)) exact = g;
-    }
-    return exact || star;
+  // RFC 9309 §2.2.1: il product token si confronta per uguaglianza, senza maiuscole (mai per
+  // sottostringa: «Mediapartners-Google*» non è '*', «bot» non è GPTBot); i gruppi dello stesso
+  // crawler si uniscono; i gruppi '*' valgono solo se nessun gruppo nomina il crawler.
+  // Il token finisce al primo carattere fuori da [a-z_-], come nel parser di Google.
+  const token = (s) => s.toLowerCase().match(/^[a-z_-]*/)[0];
+  const rulesFor = (ua) => {
+    const t = ua === '*' ? '' : token(ua);
+    const own = t ? groups.filter((g) => g.agents.some((a) => a !== '*' && token(a) === t)) : [];
+    return (own.length ? own : groups.filter((g) => g.agents.includes('*'))).flatMap((g) => g.rules);
   };
   const isAllowed = (ua, path = '/') => {
-    const g = matchGroup(ua);
-    if (!g) return true;
     let allowed = true, best = -1;
-    for (const r of g.rules) {
+    for (const r of rulesFor(ua)) {
       if (r.path === '') continue; // "Disallow:" vuoto = nessun blocco
       const matches = r.path === '/' ? true : path.startsWith(r.path);
       if (matches && r.path.length >= best) { best = r.path.length; allowed = r.type === 'allow'; }

@@ -54,6 +54,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(r.isAllowed('GPTBot', '/') === true, 'home ammessa con disallow parziale');
   ok(r.isAllowed('GPTBot', '/private/x') === false, 'path bloccato rispettato');
 }
+{
+  // robots.txt di Wikipedia: «Mediapartners-Google*» con «Disallow: /» NON è il gruppo '*'.
+  const r = parseRobots('User-agent: Mediapartners-Google*\nDisallow: /\n\nUser-agent: *\nDisallow: /w/\n');
+  ok(r.isAllowed('*', '/') === true, 'robots: un agent col * finale non cattura il gruppo *');
+  ok(r.isAllowed('Mediapartners-Google', '/') === false, 'robots: il * finale vale per il suo crawler');
+  ok(r.isAllowed('Googlebot', '/') === true && r.isAllowed('Googlebot', '/w/x') === false, 'robots: Googlebot cade sul gruppo *');
+}
+{
+  // RFC 9309 §2.2.1: token per uguaglianza (non sottostringa), gruppi dello stesso crawler uniti.
+  const r = parseRobots('User-agent: GPTBot\nDisallow: /a\n\nUser-agent: gptbot\nDisallow: /b\n\nUser-agent: bot\nDisallow: /\n');
+  ok(r.isAllowed('GPTBot', '/a') === false && r.isAllowed('GPTBot', '/b') === false, 'robots: gruppi dello stesso crawler uniti');
+  ok(r.isAllowed('GPTBot', '/') === true, 'robots: «bot» non cattura GPTBot per sottostringa');
+}
 
 // weights.mjs — profilo EVIDENCE-2026: i pesi sono una dichiarazione pubblica, non un dettaglio interno
 {
@@ -437,6 +450,7 @@ ok(jsonLdCount('<script>var s="<script type=\'application/ld+json\'>{}"</script>
   const base = seo({});
   ok(base.score === 100 && base.checks.length > 4, 'seo: punteggio tech invariato, check accodati');
   ok(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true }).checks.length === 4, 'seo: senza input i check restano 4');
+  ok(seo({ robotsTxt: 'User-agent: Mediapartners-Google*\nDisallow: /\n\nUser-agent: *\nDisallow: /w/\n' }).score === 100, 'seo: robots tipo Wikipedia non è un blocco totale');
   // ReDoS su HTML ostile da ~1 MB: tutti i controlli B1-B4 insieme restano sotto il secondo.
   for (const [k, h] of [['tag link lungo', '<link ' + 'a'.repeat(1_000_000)], ['<link ripetuto', '<link'.repeat(200_000)], ['<meta ripetuto', '<meta'.repeat(200_000)], ['<!-- aperti', '<!--'.repeat(250_000)], ['ld+json senza >', '<script type="application/ld+json"'.repeat(30_000)], ['ld+json senza chiusura', '<script type="application/ld+json">'.repeat(28_000)]]) {
     const t0 = Date.now();
