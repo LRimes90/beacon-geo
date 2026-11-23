@@ -1,10 +1,12 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
+import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, jsonLdCount, contentHtml, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords, traceRedirects } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
-import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
+import { assertSafeUrl, isBlockedIp, SsrfError, makeSafeLookup, pinnedFetch, safeFetch, __setResolverForTests } from './src/ssrf-guard.js';
+import http from 'node:http';
+import zlib from 'node:zlib';
 import { summarizePsi } from './src/perf.js';
 import { generateStatement } from './src/statement.js';
 import { remedyFor, REMEDIATION } from './src/remediation.js';
@@ -52,6 +54,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(r.isAllowed('GPTBot', '/') === true, 'home ammessa con disallow parziale');
   ok(r.isAllowed('GPTBot', '/private/x') === false, 'path bloccato rispettato');
 }
+{
+  // robots.txt di Wikipedia: «Mediapartners-Google*» con «Disallow: /» NON è il gruppo '*'.
+  const r = parseRobots('User-agent: Mediapartners-Google*\nDisallow: /\n\nUser-agent: *\nDisallow: /w/\n');
+  ok(r.isAllowed('*', '/') === true, 'robots: un agent col * finale non cattura il gruppo *');
+  ok(r.isAllowed('Mediapartners-Google', '/') === false, 'robots: il * finale vale per il suo crawler');
+  ok(r.isAllowed('Googlebot', '/') === true && r.isAllowed('Googlebot', '/w/x') === false, 'robots: Googlebot cade sul gruppo *');
+}
+{
+  // RFC 9309 §2.2.1: token per uguaglianza (non sottostringa), gruppi dello stesso crawler uniti.
+  const r = parseRobots('User-agent: GPTBot\nDisallow: /a\n\nUser-agent: gptbot\nDisallow: /b\n\nUser-agent: bot\nDisallow: /\n');
+  ok(r.isAllowed('GPTBot', '/a') === false && r.isAllowed('GPTBot', '/b') === false, 'robots: gruppi dello stesso crawler uniti');
+  ok(r.isAllowed('GPTBot', '/') === true, 'robots: «bot» non cattura GPTBot per sottostringa');
+}
 
 // weights.mjs — profilo EVIDENCE-2026: i pesi sono una dichiarazione pubblica, non un dettaglio interno
 {
@@ -73,6 +88,28 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(getMeta(`<meta name="description" content="Informativa dell'Associazione: dati e finalita.">`, 'description')
        === "Informativa dell'Associazione: dati e finalita.",
      'apostrofo dentro content non tronca la description');
+  ok(getMeta(`<meta content='a "b" c' property="og:title">`, 'og:title') === 'a "b" c', 'getMeta: content prima di property, virgolette miste');
+  ok(getMeta('<META NAME="Description" CONTENT="Prezzi > 10 euro">', 'description') === 'Prezzi > 10 euro', 'getMeta: maiuscole e > dentro il valore');
+  ok(getMeta('<meta data-name="description" content="no"><meta name="description" content="si">', 'description') === 'si', 'getMeta: data-name non conta come name');
+  ok(getMeta('<meta property="og:image:alt" content="alt"><meta property="og:image" content="img">', 'og:image') === 'img', 'getMeta: og:image non pesca og:image:alt');
+  // ReDoS: l'HTML lo sceglie chi lancia la scansione (fino a 3 MB). La vecchia regex impiegava
+  // ~15 s su 200 KB di "<meta" ripetuto, bloccando l'unico processo Node per tutti.
+  for (const [k, h] of [['<meta ripetuto', '<meta'.repeat(200_000)], ['virgolette aperte', '<meta "'.repeat(150_000)], ['tag lungo', '<meta ' + 'a '.repeat(500_000)]]) {
+    const t0 = Date.now();
+    getMeta(h, 'description');
+    ok(Date.now() - t0 < 1000, 'getMeta lineare su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
+  }
+  // Stesso rischio per contentHtml (usata da quasi ogni analisi) e per i blocchi JSON-LD:
+  // [\s\S]*? senza chiusura ripartiva da capo a ogni apertura (1 MB = minuti, o peggio).
+  for (const [k, h] of [['<!-- aperti', '<!--'.repeat(250_000)], ['<script aperti', '<script'.repeat(140_000)], ['<style aperti', '<style'.repeat(160_000)], ['ld+json senza >', '<script type="application/ld+json"'.repeat(30_000)], ['ld+json senza chiusura', '<script type="application/ld+json">'.repeat(28_000)]]) {
+    const t0 = Date.now();
+    contentHtml(h); jsonLdTypes(h); jsonLdCount(h);
+    ok(Date.now() - t0 < 1000, 'contentHtml e JSON-LD lineari su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
+  }
+  ok(contentHtml('a<!-- x -->b<SCRIPT>y</script>c<style>z</STYLE>d<noscript>n</noscript>e') === 'a b c d e', 'contentHtml: blocchi nascosti tolti, maiuscole comprese');
+  ok(contentHtml('a<!-- x') === 'a<!-- x', 'contentHtml: blocco senza chiusura lasciato com\'era');
+  ok(jsonLdCount('<script type="application/ld+json">{}</script><script>var s="<script type=\'x\'>"</script><script type=\'application/ld+json\'>[]</script>') === 2, 'jsonLdCount: due blocchi, virgolette singole comprese');
+ok(jsonLdCount('<script>var s="<script type=\'application/ld+json\'>{}"</script>') === 0, 'jsonLdCount: un tag ld+json dentro una stringa JS non è un blocco');
   ok(jsonLdTypes(html).includes('Organization'), 'tipo JSON-LD rilevato');
   ok(semanticRatio(html).semantic === 2, 'tag semantici contati (header+main)');
   ok(imgAlt(html).total === 2 && imgAlt(html).withAlt === 1, 'alt immagini contate');
@@ -405,6 +442,84 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const bad = analyzeTech({ https: false, noindex: true, viewport: false, statusOk: false });
   ok(bad.score === 0, 'tech: tutto problematico = 0');
   ok(bad.checks.find((c) => c.name.startsWith('Indicizz')).status === 'crit', 'tech: noindex è critico');
+}
+{
+  // B1-B4: controlli SEO tecnici (src/seoTech.js), offline con HTML e header di fixture.
+  const seo = (o) => analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true, seo: { robotsOk: true, robotsTxt: 'User-agent: *\nDisallow:\nSitemap: https://e.it/s.xml', finalUrl: 'https://e.it/p', html: '', headers: null, probes: null, ...o } });
+  const by = (r, s) => r.checks.find((c) => c.name.startsWith(s));
+  const base = seo({});
+  ok(base.score === 100 && base.checks.length > 4, 'seo: punteggio tech invariato, check accodati');
+  ok(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true }).checks.length === 4, 'seo: senza input i check restano 4');
+  ok(seo({ robotsTxt: 'User-agent: Mediapartners-Google*\nDisallow: /\n\nUser-agent: *\nDisallow: /w/\n' }).score === 100, 'seo: robots tipo Wikipedia non è un blocco totale');
+  // ReDoS su HTML ostile da ~1 MB: tutti i controlli B1-B4 insieme restano sotto il secondo.
+  for (const [k, h] of [['tag link lungo', '<link ' + 'a'.repeat(1_000_000)], ['<link ripetuto', '<link'.repeat(200_000)], ['<meta ripetuto', '<meta'.repeat(200_000)], ['<!-- aperti', '<!--'.repeat(250_000)], ['ld+json senza >', '<script type="application/ld+json"'.repeat(30_000)], ['ld+json senza chiusura', '<script type="application/ld+json">'.repeat(28_000)]]) {
+    const t0 = Date.now();
+    seo({ html: h });
+    ok(Date.now() - t0 < 1000, 'seo: lineare su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
+  }
+  // B1
+  ok(by(seo({ headers: { 'X-Robots-Tag': 'noindex, nofollow' } }), 'Direttive').status === 'crit', 'seo B1: X-Robots-Tag noindex = crit');
+  ok(by(seo({ headers: { 'X-Robots-Tag': 'otherbot: noindex' } }), 'Direttive').status === 'good', 'seo B1: noindex per altro bot ignorato');
+  ok(by(seo({ html: '<meta name="robots" content="index, nofollow">' }), 'Direttive').status === 'warn', 'seo B1: meta nofollow = warn');
+  ok(by(seo({ robotsTxt: 'User-agent: *\nDisallow: /' }), 'robots.txt: blocchi').status === 'crit', 'seo B1: Disallow / = crit');
+  ok(by(seo({ robotsTxt: 'User-agent: Googlebot\nDisallow: /\n\nUser-agent: *\nDisallow:' }), 'robots.txt: blocchi').status === 'crit', 'seo B1: Googlebot bloccato = crit');
+  ok(by(seo({ robotsTxt: 'User-agent: *\nDisallow: /admin' }), 'Riga Sitemap').status === 'warn', 'seo B1: Sitemap assente = warn');
+  ok(by(seo({}), 'Riga Sitemap').status === 'good' && by(seo({}), 'robots.txt: blocchi').status === 'good', 'seo B1: robots sano = good');
+  // B2
+  const can = (h, u) => by(seo({ html: h, finalUrl: u || 'https://e.it/p' }), 'Canonical').status;
+  ok(can('<link rel="canonical" href="https://e.it/p/">') === 'good', 'seo B2: canonical coerente (slash finale ignorato)');
+  ok(can('') === 'warn' && can('<link rel="canonical" href="/p">') === 'warn', 'seo B2: assente o relativo = warn');
+  ok(can('<link rel="canonical" href="https://e.it/a"><link rel="canonical" href="https://e.it/b">') === 'warn', 'seo B2: doppio canonical = warn');
+  ok(can('<link rel="canonical" href="https://altro.it/p">') === 'warn' && can('<link rel="canonical" href="https://e.it/altra">') === 'warn', 'seo B2: canonical altrove = warn');
+  const hl = (h) => by(seo({ html: h }), 'Hreflang');
+  ok(!hl('<html></html>'), 'seo B2: senza hreflang il check non compare');
+  ok(hl('<link rel="alternate" hreflang="it" href="https://e.it/p"><link rel="alternate" hreflang="en" href="https://e.it/en/p"><link rel="alternate" hreflang="x-default" href="https://e.it/p">').status === 'good', 'seo B2: hreflang completo = good');
+  const hbad = hl('<link rel="alternate" hreflang="italiano" href="https://e.it/x"><link rel="alternate" hreflang="en" href="https://e.it/en/p">');
+  ok(hbad.status === 'warn' && /italiano/.test(hbad.detail) && /x-default/.test(hbad.detail), 'seo B2: codice non valido, niente x-default e niente rimando a sé');
+  // B3 (probes simulate)
+  const pr = (o) => ({ http: { ok: true, hops: [], finalUrl: 'https://e.it/' }, www: { ok: false, hops: [], finalUrl: '', variant: 'www.e.it' }, chain: { ok: true, hops: [], finalUrl: 'https://e.it/p' }, ...o });
+  ok(by(seo({ probes: pr({}) }), 'Da http').status === 'good', 'seo B3: http→https = good');
+  ok(by(seo({ probes: pr({ http: { ok: true, hops: [], finalUrl: 'http://e.it/' } }) }), 'Da http').status === 'crit', 'seo B3: http che resta http = crit');
+  ok(by(seo({ probes: pr({ chain: { ok: true, hops: [{ url: 'a' }, { url: 'b' }], finalUrl: 'c' } }) }), 'Catena').status === 'warn', 'seo B3: 2 salti = warn');
+  ok(by(seo({ probes: pr({}) }), 'Variante www').status === 'info', 'seo B3: www che non risolve = info, non errore');
+  ok(by(seo({ probes: pr({ www: { ok: true, finalUrl: 'https://www.e.it/', variant: 'www.e.it' } }) }), 'Variante www').status === 'warn', 'seo B3: www servito su host diverso = warn');
+  ok(by(seo({ probes: pr({ www: { ok: true, finalUrl: 'https://e.it/', variant: 'www.e.it' } }) }), 'Variante www').status === 'good', 'seo B3: www che rimanda al principale = good');
+  const hdrAll = { 'Strict-Transport-Security': 'max-age=1', 'Content-Security-Policy': "default-src 'self'", 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
+  ok(by(seo({ headers: hdrAll }), 'Header di sicurezza').status === 'good', 'seo B3: 4 header = good');
+  const hmiss = by(seo({ headers: { 'X-Content-Type-Options': 'sniff' } }), 'Header di sicurezza');
+  ok(hmiss.status === 'warn' && /HSTS/.test(hmiss.detail) && /X-Content-Type-Options/.test(hmiss.detail), 'seo B3: header mancanti elencati');
+  ok(!by(seo({}), 'Header di sicurezza'), 'seo B3: senza header (snapshot) il check è omesso');
+  // B4
+  const ld = (j) => `<script type="application/ld+json">${j}</script>`;
+  ok(by(seo({ html: ld('{"@type":"Organization",') }), 'JSON-LD: sintassi').status === 'crit', 'seo B4: JSON-LD rotto = crit');
+  ok(by(seo({ html: ld('{"@type":"Organization","name":"X","url":"https://e.it"}') }), 'JSON-LD: proprietà').status === 'good', 'seo B4: Organization completa = good');
+  const lp = by(seo({ html: ld('{"@graph":[{"@type":"Article","headline":"h"},{"@type":"WebSite","name":"n","url":"u"}]}') }), 'JSON-LD: proprietà');
+  ok(lp.status === 'warn' && /Article: image, datePublished, author/.test(lp.detail) && !/WebSite/.test(lp.detail), 'seo B4: proprietà mancanti dentro @graph');
+  ok(!by(seo({}), 'JSON-LD: sintassi'), 'seo B4: senza JSON-LD i check non compaiono');
+  const og4 = '<meta property="og:title" content="t"><meta property="og:description" content="d"><meta property="og:image" content="i"><meta property="og:url" content="u">';
+  ok(by(seo({ html: og4 }), 'Open Graph').status === 'info', 'seo B4: OG completo senza image:alt = info (consiglio)');
+  ok(by(seo({ html: og4 + '<meta property="og:image:alt" content="a">' }), 'Open Graph').status === 'good', 'seo B4: OG completo = good');
+  ok(/og:image/.test(by(seo({ html: '<meta property="og:title" content="t">' }), 'Open Graph').detail), 'seo B4: OG incompleto elenca i mancanti');
+  {
+    // safeFetch.hops (su cui poggia traceRedirects): safeFetch non usa globalThis.fetch ma
+    // pinnedFetch, quindi server locale. Il guard vede un IP pubblico finto (resolver di test),
+    // la connessione va a 127.0.0.1 (`_lookup` di test): niente DNS né rete esterna.
+    const http = await import('node:http');
+    const R = { '/': [301, '/a'], '/a': [302, '/it'], '/it': [200, null] };
+    const srv = http.createServer((q, s) => { const [st, loc] = R[q.url] || [404, null]; s.writeHead(st, loc ? { location: loc } : {}); s.end('x'); });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const base = `http://b3.test:${srv.address().port}`;
+    const loop = (h, o, cb) => { if (typeof o === 'function') { cb = o; o = {}; } o.all ? cb(null, [{ address: '127.0.0.1', family: 4 }]) : cb(null, '127.0.0.1', 4); };
+    __setResolverForTests(async () => [{ address: '93.184.216.34', family: 4 }]);
+    try {
+      const tr = await safeFetch(base + '/', { _lookup: loop });
+      ok(tr.res.status === 200 && tr.hops.length === 2 && tr.hops[0].status === 301 && tr.finalUrl.endsWith('/it'), 'seo B3: safeFetch conta i salti (base di traceRedirects)');
+      const zero = await safeFetch(base + '/it', { _lookup: loop });
+      ok(zero.hops.length === 0, 'seo B3: nessun salto = hops vuoto');
+      ok((await traceRedirects('http://127.0.0.1/')).ok === false, 'seo B3: IP interno bloccato dal guard anche nella sonda');
+    } finally { __setResolverForTests(null); srv.close(); }
+  }
+  ok(by(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true, seo: { robotsOk: true, robotsTxt: '', finalUrl: 'https://e.it/', html: '', headers: null, probes: null } }, 'en'), 'Canonical').detail.length > 0, 'seo: i18n en');
 }
 {
   // agentReady — informativa per scelta: nessuna evidenza che questi segnali correlino
@@ -1006,6 +1121,34 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     .flatMap((q) => [q.q, q.help, q.detail, ...(q.examples || []), ...Object.values(q.options || {})])
     .filter((s) => s && !en[s]);
   ok(missingEn.length === 0, `aiact/ui: traduzione en per ogni stringa del questionario (mancanti: ${missingEn.slice(0, 3).join(' | ')})`);
+  // Stesso controllo per de fr es pt (prima solo en): il questionario, i testi fissi della
+  // pagina AI Act e le descrizioni FEATURES della home devono avere voce in ogni lingua,
+  // diversa dall'italiano. Le stringhe fisse si leggono dal sorgente: un t('…') nuovo
+  // senza traduzione fa fallire il test invece di mostrare italiano sul sito tedesco.
+  {
+    const pagina = fs.readFileSync('./web/app/aiact/page.jsx', 'utf8') + fs.readFileSync('./web/app/page.jsx', 'utf8').split('function Gauge')[0];
+    const fisse = [...pagina.matchAll(/\bt\(\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")\s*\)/g)].map((m) => (m[1] ?? m[2]).replace(/\\'/g, "'"));
+    const features = [...pagina.matchAll(/\b[td]: '((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'"));
+    const tutte = [...new Set([...fisse, ...features, ...Object.values(QUESTION_TEXT).flatMap((q) => [q.q, q.help, q.detail, ...(q.examples || []), ...Object.values(q.options || {})])].filter(Boolean))];
+    ok(tutte.length > 120, `aiact+home/ui: stringhe estratte (${tutte.length})`);
+    const UI5 = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
+    for (const [l, d] of Object.entries(UI5)) {
+      const manca = tutte.filter((k) => !d[k]);
+      ok(manca.length === 0, `aiact+home/ui: ${l} traduce ogni stringa (mancanti: ${manca.length}, es. ${manca.slice(0, 2).join(' | ')})`);
+      const uguali = tutte.filter((k) => d[k] === k && k.length > 25);
+      ok(uguali.length === 0, `aiact+home/ui: ${l} senza testi lunghi copiati dall'italiano (${uguali.slice(0, 2).join(' | ')})`);
+    }
+    // Il perché di ogni obbligo (era fisso in italiano dentro deriveObligations) esce nella lingua richiesta.
+    const tutti = { role: 'both', interaction: true, syntheticContent: true, deepfake: true, editorialReview: false, gpai: true };
+    const whyIt = assessAiAct(tutti, null, 'it').obligations.map((o) => o.why);
+    ok(whyIt.length >= 6 && whyIt.every(Boolean), 'aiact/why: ogni obbligo ha un perché in it');
+    for (const l of ['en', 'de', 'fr', 'es', 'pt']) {
+      const w = assessAiAct(tutti, null, l).obligations.map((o) => o.why);
+      ok(w.every((x, i) => x && x !== whyIt[i]), `aiact/why: perché tradotto in ${l} (${w.find((x, i) => x === whyIt[i]) || 'tutti'})`);
+    }
+    const scanWhy = assessAiAct({ role: 'none' }, { chatbots: ['Tidio'] }, 'de').obligations.find((o) => o.id === 'art50_1').why;
+    ok(scanWhy.includes('Tidio') && !scanWhy.includes('scansione'), `aiact/why: dettaglio scan interpolato in de («${scanWhy}»)`);
+  }
   // Il verdetto deve essere calcolabile con le sole risposte obbligatorie.
   const minimal = assessAiAct(Object.fromEntries(REQUIRED.map((id) => [id, id === 'role' ? 'deployer' : 'yes'])), null, 'it');
   ok(minimal.verdict.title && minimal.obligations.length > 0, 'aiact/ui: le risposte obbligatorie bastano per un verdetto');
@@ -1290,7 +1433,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // Chiave presente ma testo italiano copiato: answerability e agentReady sono arrivati
   // così in 5 lingue senza che il controllo sulle chiavi se ne accorgesse.
   // Ammessi uguali all'italiano solo sigle, codice (remedy.*) e parole identiche nella lingua.
-  const UGUALI_OK = /^(remedy\.|axe\.nd$|suite\.card\.nd$|report\.date$|structured\.(meta\.name|signals\.detail)$|rights\.(signal\.name|tdmrep\.name|tdmrep\.detail\.ok)$|tech\.(https\.name|status\.detail\.ok|viewport\.name|viewport\.detail\.ok)$|a11y\.headings\.detail$|agentFiles\.llms\.detail\.ok$|agentReady\.(usage|botauth)\.name$)/;
+  const UGUALI_OK = /^(remedy\.|axe\.nd$|suite\.card\.nd$|report\.date$|structured\.(meta\.name|signals\.detail)$|rights\.(signal\.name|tdmrep\.name|tdmrep\.detail\.ok)$|tech\.(https\.name|status\.detail\.ok|viewport\.name|viewport\.detail\.ok|canonical\.name|hreflang\.name|og\.name)$|a11y\.headings\.detail$|agentFiles\.llms\.detail\.ok$|agentReady\.(usage|botauth)\.name$)/;
   for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
     const copiati = dizionari.it.filter((k) => !UGUALI_OK.test(k) && DIZ[lang][k] === DIZ_IT[k]);
     ok(copiati.length === 0, `catalogo ${lang}: nessun testo copiato dall'italiano (${copiati.slice(0, 5).join(',') || 'nessuno'})`);
@@ -1377,14 +1520,14 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
 // report/ui: ogni t('…') letterale di /report ha la voce nei 5 dizionari. La chiave è la
 // stringa italiana: senza voce, il sito inglese mostra l'italiano e nessun errore lo segnala.
 {
-  const src = ['./web/app/report/page.jsx', './web/app/report/riga.mjs'].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+  const src = ['./web/app/report/page.jsx', './web/app/report/riga.mjs', './web/app/geo-dettaglio.jsx', './web/app/page.jsx'].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const chiavi = [...src.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'"));
   ok(chiavi.length > 20, `report/ui: chiavi t() estratte (${chiavi.length})`);
   const diz = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
   const mancanti = Object.entries(diz).flatMap(([l, d]) => chiavi.filter((k) => !d[k]).map((k) => l + ': ' + k));
   ok(mancanti.length === 0, `report/ui: ogni t('…') tradotto in en de fr es pt (mancanti: ${mancanti.slice(0, 4).join(' | ')})`);
   // le etichette di categoria passano da t(LABELS[k]): dinamiche, la regex sopra non le vede
-  for (const f of ['./web/app/report/page.jsx', './web/app/page.jsx']) {
+  for (const f of ['./web/app/geo-dettaglio.jsx']) {
     const blocco = (fs.readFileSync(f, 'utf8').match(/const LABELS = \{([^}]*)\}/) || [])[1] || '';
     const etichette = [...blocco.matchAll(/:\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1]);
     ok(etichette.length === 6, `report/ui: ${f} ha 6 etichette LABELS (${etichette.length})`);
@@ -1404,6 +1547,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(!soloInfo.includes('0/0') && soloInfo.includes('Non misurato'), `report/riga: categoria solo-info senza «0/0» e con il nome («${soloInfo}»)`);
   const misto = rigaCategoria([{ name: 'A', status: 'good' }, { name: 'B', status: 'warn' }, { name: 'C', status: 'crit' }], id);
   ok(misto === '1/3 controlli ok · B, C', `report/riga: problemi elencati dopo il conteggio («${misto}»)`);
+}
+
+// home: il dettaglio per categoria viene dagli stessi componenti di /report (un solo file, due pagine)
+{
+  const home = fs.readFileSync('./web/app/page.jsx', 'utf8');
+  const rep = fs.readFileSync('./web/app/report/page.jsx', 'utf8');
+  for (const [nome, src] of [['home', home], ['report', rep]]) {
+    ok(/from '(\.\/|\.\.\/)geo-dettaglio'/.test(src) && src.includes('CategoriaGeo') && src.includes('DaSistemare'), `${nome}: usa CategoriaGeo e DaSistemare condivisi`);
+    ok(!/const LABELS = \{/.test(src), `${nome}: niente copia locale di LABELS`);
+  }
+  ok(home.includes('res.agentReady') && home.includes("t(\"Standard d'avanguardia per gli agenti\")"), 'home: mostra agentReady come sezione informativa');
+  const ar = analyzeAgentReady({}, 'it');
+  ok(ar.informational === true, 'agentReady: informativo nel motore (la home non lo mette tra le categorie col punteggio)');
 }
 
 // rifiniture /report (minori della review finale)
@@ -1439,6 +1595,76 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     const m = await auditAll('http://127.0.0.1/', { desktop: true });
     ok(psi.sort().join(',') === 'desktop,mobile' && m.perfDesktop && m.perfDesktop.strategy === 'desktop', `suite: mobile + desktop in parallelo (${psi.join(',')})`);
   } finally { globalThis.fetch = realFetch; }
+}
+
+// anti-DNS-rebinding: lookup dentro la connessione + pinnedFetch (offline, resolver finto)
+{
+  const cbLookup = (look, host, opts) => new Promise((res) => look(host, opts, (e, a, f) => res({ e, a, f })));
+  const fake = (addrs) => makeSafeLookup(async () => addrs);
+  for (const [name, addr, fam] of [['127.0.0.1', '127.0.0.1', 4], ['::1', '::1', 6], ['metadata', '169.254.169.254', 4]]) {
+    const r = await cbLookup(fake([{ address: addr, family: fam }]), 'x.test', {});
+    ok(r.e instanceof SsrfError && r.e.code === 'ssrf.resolvesInternal', `rebind: lookup blocca ${name}`);
+  }
+  const mix = await cbLookup(fake([{ address: '8.8.8.8', family: 4 }, { address: '10.0.0.1', family: 4 }]), 'x.test', { all: true });
+  ok(mix.e instanceof SsrfError && mix.e.code === 'ssrf.resolvesInternal', 'rebind: misto pubblico+privato bloccato');
+  const pub = await cbLookup(fake([{ address: '8.8.8.8', family: 4 }]), 'x.test', {});
+  ok(!pub.e && pub.a === '8.8.8.8' && pub.f === 4, 'rebind: IP pubblico passa (firma senza all)');
+  const pubAll = await cbLookup(fake([{ address: '8.8.8.8', family: 4 }]), 'x.test', { all: true });
+  ok(!pubAll.e && pubAll.a.length === 1 && pubAll.a[0].address === '8.8.8.8', 'rebind: IP pubblico passa (firma con all)');
+
+  let hits = 0;
+  let srvClose = () => {};
+  const srv = http.createServer((req, res) => {
+    hits++;
+    req.socket.on('close', () => srvClose(true));
+    if (req.url === '/gz') { res.writeHead(200, { 'content-encoding': 'gzip', 'set-cookie': ['a=1', 'b=2'], 'content-type': 'text/plain' }); res.end(zlib.gzipSync('ciao gzip')); }
+    else if (req.url === '/slow') { res.writeHead(200, { 'content-encoding': 'gzip' }); const z = zlib.createGzip(); z.pipe(res); z.write('x'.repeat(1000)); z.flush(); }
+    else if (req.url === '/204') { res.writeHead(204); res.end(); }
+    else if (req.url === '/301') { res.writeHead(301, { location: '/dest' }); res.end(); }
+    else { res.end('ok'); }
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  // lookup di test: nessun guard, punta sempre a 127.0.0.1
+  const open = (h, o, cb) => (o.all ? cb(null, [{ address: '127.0.0.1', family: 4 }]) : cb(null, '127.0.0.1', 4));
+  try {
+    // simulazione rebinding: 1ª risoluzione pubblica (controllo), poi 127.0.0.1 (connessione)
+    let calls = 0;
+    __setResolverForTests(async () => (++calls === 1 ? [{ address: '8.8.8.8', family: 4 }] : [{ address: '127.0.0.1', family: 4 }]));
+    let err;
+    try { await safeFetch(`http://rebind.test:${port}/`); } catch (e) { err = e; }
+    ok(err instanceof SsrfError && err.code === 'ssrf.resolvesInternal', 'rebind: safeFetch lancia SsrfError al rebinding');
+    ok(hits === 0 && calls === 2, `rebind: il server riceve 0 connessioni (hits=${hits}, risoluzioni=${calls})`);
+    __setResolverForTests();
+
+    // conversione risposta, senza guard
+    const g = await pinnedFetch(`http://x.test:${port}/gz`, { _lookup: open });
+    ok(g.status === 200 && (await g.text()) === 'ciao gzip', 'pinnedFetch: corpo gzip decompresso');
+    ok(g.headers.getSetCookie().length === 2 && !g.headers.has('content-encoding'), 'pinnedFetch: header multipli preservati');
+    // cancel del corpo gzip: il socket lato server deve chiudersi entro 1 s
+    const closed = new Promise((r) => { srvClose = r; });
+    const big = await pinnedFetch(`http://x.test:${port}/slow`, { _lookup: open });
+    const rd = big.body.getReader();
+    await rd.read();
+    await rd.cancel();
+    ok(await Promise.race([closed, new Promise((r) => setTimeout(() => r(false), 1000))]) === true, 'pinnedFetch: cancel su gzip chiude il socket lato server');
+    const n = await pinnedFetch(`http://x.test:${port}/204`, { _lookup: open });
+    ok(n.status === 204 && n.body === null, 'pinnedFetch: 204 con corpo null');
+    const m = await pinnedFetch(`http://x.test:${port}/301`, { redirect: 'manual', _lookup: open });
+    ok(m.status === 301 && m.headers.get('location') === '/dest', 'pinnedFetch: 301 con Location leggibile, nessun redirect seguito');
+  } finally { __setResolverForTests(); srv.close(); }
+}
+{
+  // Status line ostile (carattere di controllo nel reason phrase): il sito scansionato NON deve
+  // poter far cadere il processo con un'eccezione non catturata nel callback 'response'.
+  const net = await import('node:net');
+  const raw = net.createServer((s) => s.once('data', () => s.end('HTTP/1.1 200 O\x01K\r\nContent-Length: 2\r\n\r\nhi')));
+  await new Promise((r) => raw.listen(0, '127.0.0.1', r));
+  const loop = (h, o, cb) => { if (typeof o === 'function') { cb = o; o = {}; } o.all ? cb(null, [{ address: '127.0.0.1', family: 4 }]) : cb(null, '127.0.0.1', 4); };
+  try {
+    const r = await pinnedFetch(`http://x.test:${raw.address().port}/`, { _lookup: loop }).catch(() => null);
+    ok(r === null || (r.status === 200 && (await r.text()) === 'hi'), 'pinnedFetch: status text ostile gestito, nessun crash del processo');
+  } finally { raw.close(); }
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

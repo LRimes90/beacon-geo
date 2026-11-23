@@ -6,6 +6,7 @@
 // catalogo src/messages/ — la logica di punteggio resta identica.
 import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links, sections, extractableBlocks, paragraphWords, citableEvidence, htmlLang, stripTags, contentWords, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS } from './lib.js';
 import { makeT } from './messages/index.js';
+import { analyzeSeoChecks } from './seoTech.js';
 
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 const pct = (a, b) => (b ? (a / b) * 100 : 0);
@@ -450,7 +451,9 @@ export function analyzeAgentReady({ contentUsage, botAuth, webmcp, conventions }
 export const AGENT_READY_LABEL = 'Standard d\'avanguardia per gli agenti';
 
 // ⑦ FONDAMENTALI TECNICI — informativo ma con allarmi forti (noindex/HTTPS bloccano la visibilità).
-export function analyzeTech({ https, noindex, viewport, statusOk }, lang = 'it') {
+// `seo` (opzionale) = input dei controlli B1-B4 di src/seoTech.js: i check si ACCODANO,
+// ma il punteggio resta calcolato sui 4 originali (invariato, calibrato).
+export function analyzeTech({ https, noindex, viewport, statusOk, seo }, lang = 'it') {
   const t = makeT(lang);
   const checks = [
     { name: t('tech.https.name'), status: https ? 'good' : 'crit',
@@ -466,6 +469,8 @@ export function analyzeTech({ https, noindex, viewport, statusOk }, lang = 'it')
       detail: statusOk ? t('tech.status.detail.ok') : t('tech.status.detail.no') },
   ];
   const good = checks.filter((c) => c.status === 'good').length;
-  return { informational: true, score: clamp(pct(good, 4)), checks };
+  const score = clamp(pct(good, 4));
+  if (seo) checks.push(...analyzeSeoChecks(seo, lang));
+  return { informational: true, score, checks };
 }
 export const TECH_LABEL = 'Fondamentali tecnici';

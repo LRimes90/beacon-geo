@@ -3,11 +3,8 @@ import { useState } from 'react';
 import ToolNav from './nav';
 import Turnstile from './turnstile';
 import { useLang, Rich } from './i18n';
+import { LABELS, fixesOf, pin, CategoriaGeo, DaSistemare } from './geo-dettaglio';
 
-const LABELS = {
-  access: 'Accesso AI', agentFiles: 'File per agenti e AI', structured: 'Dati strutturati e SEO',
-  readability: 'Leggibilità per le macchine', answerability: 'Risposta pronta per le AI', offsite: 'Visibilità off-site',
-};
 const color = (s) => (s >= 80 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : s >= 40 ? 'var(--mid)' : 'var(--crit)');
 const verdict = (s) => (s >= 80 ? 'Buono' : s >= 60 ? 'Discreto' : s >= 40 ? 'Da migliorare' : 'Critico');
 
@@ -84,7 +81,8 @@ export default function Home() {
     URL.revokeObjectURL(a.href);
   }
 
-  const fixes = res ? Object.values(res.categories).flatMap((c) => (c.checks || []).filter((k) => k.fix).map((k) => k.fix)) : [];
+  // stessa regola di /report: prima i critici, poi gli avvisi (la lista piatta li mescolava in ordine di categoria)
+  const fixes = res ? fixesOf(Object.values(res.categories).flatMap((c) => c.checks || [])) : [];
 
   return (
     <>
@@ -130,15 +128,7 @@ export default function Home() {
             )}
 
             <section className="cats">
-              {Object.entries(LABELS).map(([k, label]) => {
-                const s = res.categories[k].score;
-                return (
-                  <div className="cat" key={k}>
-                    <div className="top"><span className="lab">{t(label)}</span><span className="val" style={{ color: color(s) }}>{s}</span></div>
-                    <div className="bar"><i style={{ width: s + '%', background: color(s) }} /></div>
-                  </div>
-                );
-              })}
+              {Object.keys(LABELS).map((k) => <CategoriaGeo key={k} k={k} cat={res.categories[k]} />)}
             </section>
 
             {res.tech && (
@@ -163,12 +153,20 @@ export default function Home() {
               </section>
             )}
 
-            {fixes.length > 0 && (
-              <section className="fixes">
-                <h3>{t('Azioni consigliate')}</h3>
-                <ul>{fixes.slice(0, 8).map((f, i) => <li key={i}>{f}</li>)}</ul>
+            {res.agentReady && (
+              <section className="rights">
+                {/* informativo: nel motore non entra nell'overall (analyzeAgentReady, informational: true) */}
+                <div className="rt">{t("Standard d'avanguardia per gli agenti")} <span className="info">— {t('informativo, non incide sul punteggio')}</span></div>
+                <ul>
+                  {res.agentReady.checks.map((c, i) => {
+                    const [cls, ico] = pin(c.status);
+                    return <li key={i}><span className={cls}>{ico}</span> {c.name} — {c.detail}</li>;
+                  })}
+                </ul>
               </section>
             )}
+
+            {fixes.length > 0 && <section className="rights"><DaSistemare fixes={fixes} max={8} /></section>}
           </section>
         )}
 
