@@ -4,7 +4,7 @@
 // status: 'good' | 'warn' | 'crit' | 'info'
 // i18n: ogni analyzer accetta `lang` (default 'it') e legge le stringhe dal
 // catalogo src/messages/ — la logica di punteggio resta identica.
-import { getTitle, getMeta, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links, sections, extractableBlocks, paragraphWords, citableEvidence, htmlLang, stripTags, contentWords, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS } from './lib.js';
+import { getTitle, getMeta, tagAttrs, jsonLdTypes, jsonLdCount, semanticRatio, headings, imgAlt, wordCount, links, sections, extractableBlocks, paragraphWords, citableEvidence, htmlLang, stripTags, contentWords, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS } from './lib.js';
 import { makeT } from './messages/index.js';
 import { analyzeSeoChecks } from './seoTech.js';
 
@@ -98,15 +98,19 @@ export function analyzeStructured(html, lang = 'it') {
   // hreflang ha senso solo su siti multilingue: pretenderlo da un sito in una sola
   // lingua spinge ad aggiungere un alternate autoreferenziale che non dice nulla a
   // nessuno. Sta nel denominatore solo se la pagina dichiara altre lingue.
-  const multilingual = /<meta[^>]+property=["\']og:locale:alternate["\']/i.test(html)
-    || /<link[^>]+rel=["\']alternate["\'][^>]+hreflang=/i.test(html);
+  // Attributi letti con tagAttrs: le vecchie regex <link[^>]+rel=...[^>]+hreflang= erano
+  // quadratiche su un tag lungo senza ">" (ReDoS sul limite di 3 MB).
+  const metas = tagAttrs(html, 'meta'), linkTags = tagAttrs(html, 'link');
+  const rel = (a) => (a.rel || '').toLowerCase().split(/\s+/);
+  const hreflang = linkTags.some((a) => rel(a).includes('alternate') && a.hreflang !== undefined);
+  const multilingual = metas.some((a) => (a.property || '').toLowerCase() === 'og:locale:alternate') || hreflang;
   const signals = {
-    canonical: /<link[^>]+rel=["\']canonical["\']/i.test(html),
-    og: /<meta[^>]+property=["\']og:/i.test(html),
-    twitter: /<meta[^>]+name=["\']twitter:/i.test(html),
+    canonical: linkTags.some((a) => rel(a).includes('canonical')),
+    og: metas.some((a) => /^og:/i.test(a.property || '')),
+    twitter: metas.some((a) => /^twitter:/i.test(a.name || '')),
   };
   if (multilingual) {
-    signals.hreflang = /<link[^>]+rel=["\']alternate["\'][^>]+hreflang=/i.test(html);
+    signals.hreflang = hreflang;
   }
   const sigTotal = Object.keys(signals).length;
   const sigHave = Object.values(signals).filter(Boolean).length;
@@ -393,7 +397,8 @@ export const RIGHTS_LABEL = 'Segnali e diritti AI';
 export function parseContentUsage(headerValue, robotsTxt) {
   const h = headerValue && String(headerValue).trim();
   if (h) return { source: 'header', raw: h };
-  const m = String(robotsTxt || '').match(/^\s*content-usage\s*:\s*(.+)$/im);
+  // [ \t] e non \s: \s* attraversava gli a capo e ogni riga vuota ripartiva da capo (quadratico).
+  const m = String(robotsTxt || '').match(/^[ \t]*content-usage[ \t]*:[ \t]*(.+)$/im);
   if (m) return { source: 'robots', raw: m[1].trim() };
   return { source: null, raw: null };
 }

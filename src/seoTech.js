@@ -5,16 +5,7 @@
 // Riferimenti: Google Search Central (robots meta/X-Robots-Tag, canonical, hreflang,
 // dati strutturati), skill schema (proprietà obbligatorie), RFC 6797 (HSTS).
 import { makeT } from './messages/index.js';
-import { getMeta, contentHtml, parseRobots, parseAttrs, jsonLdBlocks } from './lib.js';
-
-// Attributi di ogni <tag> trovato (nomi in minuscolo). Usa contentHtml: via commenti/script.
-function tagAttrs(html, tag) {
-  const out = [];
-  // Regex lineari su HTML ostile (limite 3 MB): [^<>] ferma ogni tentativo al tag successivo,
-  // il lookbehind fa partire il nome solo a inizio parola. Senza, costo quadratico (ReDoS).
-  for (const m of contentHtml(html).matchAll(new RegExp('<' + tag + '\\b([^<>]*)>', 'gi'))) out.push(parseAttrs(m[1]));
-  return out;
-}
+import { getMeta, parseRobots, tagAttrs, jsonLdBlocks } from './lib.js';
 export const linksByRel = (html, rel) =>
   tagAttrs(html, 'link').filter((a) => (a.rel || '').toLowerCase().split(/\s+/).includes(rel));
 

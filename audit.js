@@ -6,7 +6,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { fetchText, head, traceRedirects, parseRobots, normUrl, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount } from './src/lib.js';
+import { fetchText, head, traceRedirects, parseRobots, normUrl, AI_CRAWLERS, LIVE_UA, BROWSER_UA, wordCount, headFlags } from './src/lib.js';
 import { robotsDirectives } from './src/seoTech.js';
 import { analyzeAccess, analyzeAgentFiles, analyzeStructured, analyzeReadability, analyzeAnswerability, analyzeOffsite, analyzeRights, analyzeTech, analyzeAgentReady, parseContentUsage, detectWebmcp, CATEGORY_LABELS } from './src/analyzers.js';
 import { makeT, normalizeLang } from './src/messages/index.js';
@@ -77,7 +77,7 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   const tdmrep = await head(origin + '/.well-known/tdmrep.json');
   const rights = analyzeRights({
     tdmrep: tdmrep.ok,
-    license: /<link[^>]+rel=["\']license["\']/i.test(html),
+    license: headFlags(html).license,
     contentSignal: /content-signal/i.test(robotsTxt),
   }, L);
 
@@ -125,13 +125,13 @@ export async function audit(rawUrl, { renderJs = false, lang = 'it' } = {}) {
   const overall = wsum ? Math.round(total / wsum) : 0;
 
   // fondamentali tecnici (informativo, con allarmi forti)
-  const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html) || /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots/i.test(html);
+  const noindex = headFlags(html).noindex; // tagAttrs: lineare, attributi in qualsiasi ordine
   const finalUrl = page.finalUrl || url;
   const seo = { html, headers: page.headers, finalUrl, robotsOk: robotsRes.ok, robotsTxt, probes: await probesP };
   const tech = analyzeTech({
     https: finalUrl.startsWith('https://'),
     noindex,
-    viewport: /<meta[^>]+name=["']viewport["']/i.test(html),
+    viewport: headFlags(html).viewport,
     statusOk: page.ok,
     seo,
   }, L);
@@ -174,7 +174,7 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
   const tdmrep = await head(origin + '/.well-known/tdmrep.json');
   const rights = analyzeRights({
     tdmrep: tdmrep.ok,
-    license: /<link[^>]+rel=["\']license["\']/i.test(html),
+    license: headFlags(html).license,
     contentSignal: /content-signal/i.test(robotsTxt),
   }, L);
 
@@ -205,12 +205,12 @@ export async function auditHtmlSnapshot(rawUrl, html, { lang = 'it' } = {}) {
   }
   const overall = wsum ? Math.round(total / wsum) : 0;
 
-  const noindex = /<meta[^>]+name=["']robots["'][^>]*content=["'][^"']*noindex/i.test(html) || /<meta[^>]+content=["'][^"']*noindex[^"']*["'][^>]*name=["']robots/i.test(html);
+  const noindex = headFlags(html).noindex; // tagAttrs: lineare, attributi in qualsiasi ordine
   // Snapshot: niente header né sonde di rete, i controlli che le richiedono sono omessi.
   const tech = analyzeTech({
     https: url.startsWith('https://'),
     noindex,
-    viewport: /<meta[^>]+name=["']viewport["']/i.test(html),
+    viewport: headFlags(html).viewport,
     statusOk: true,
     seo: { html, headers: null, finalUrl: url, robotsOk: robotsRes.ok, robotsTxt, probes: null },
   }, L);

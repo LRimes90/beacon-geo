@@ -141,8 +141,8 @@ export async function traceRedirects(url, { timeout = 5000, maxHops = 6 } = {}) 
 
 // ---------- HTML helpers (funzioni pure) ----------
 export function getTitle(html) {
-  const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  return m ? m[1].replace(/\s+/g, ' ').trim() : null;
+  const t = pairs(html, /<title[^<>]*>/gi, /<\/title>/gi)[0];
+  return t ? t.inner.replace(/\s+/g, ' ').trim() : null;
 }
 export function getMeta(html, name) {
   // Il delimitatore va catturato e richiuso con backreference: con [^"']* un apostrofo
@@ -224,16 +224,53 @@ function cutBlocks(s, open, close) {
   }
   return out + s.slice(pos);
 }
+// Coppie apertura/chiusura in un solo passaggio, al posto di <x[^>]*>([\s\S]*?)<\/x>: quella
+// regex ripartiva da capo a ogni apertura senza chiusura (quadratica, ReDoS su 3 MB).
+// `close` può dipendere dal match di apertura (h2 chiude con </h2>): ritorna sempre lo stesso
+// oggetto RegExp per la stessa chiusura, così una chiusura assente si cerca una volta sola.
+function pairs(s, open, close) {
+  const out = [], dead = new Set();
+  let m;
+  s = String(s || '');
+  open.lastIndex = 0;
+  while ((m = open.exec(s))) {
+    const re = typeof close === 'function' ? close(m) : close;
+    if (dead.has(re)) continue;
+    re.lastIndex = open.lastIndex;
+    const c = re.exec(s);
+    if (!c) { dead.add(re); continue; } // nessuna chiusura più avanti: come la regex, si salta
+    out.push({ m, inner: s.slice(open.lastIndex, c.index), outer: s.slice(m.index, re.lastIndex), end: re.lastIndex });
+    open.lastIndex = re.lastIndex;
+  }
+  return out;
+}
 export function contentHtml(html) {
   return HIDDEN.reduce((s, [open, close]) => cutBlocks(s, open, close), String(html || ''));
+}
+// Attributi di ogni <tag> trovato (nomi in minuscolo). Usa contentHtml: via commenti/script.
+// [^<>] ferma ogni tentativo al tag successivo: lineare anche su HTML ostile (limite 3 MB).
+export function tagAttrs(html, tag) {
+  const out = [];
+  for (const m of contentHtml(html).matchAll(new RegExp('<' + tag + '\\b([^<>]*)>', 'gi'))) out.push(parseAttrs(m[1]));
+  return out;
+}
+// I tre segnali di <head> che audit.js leggeva con regex [^>]+ quadratiche, ora dagli
+// attributi: ordine di name/content libero, maiuscole ignorate, commenti esclusi.
+export function headFlags(html) {
+  const metas = tagAttrs(html, 'meta');
+  return {
+    noindex: metas.some((a) => /^robots$/i.test(a.name || '') && /noindex/i.test(a.content || '')),
+    viewport: metas.some((a) => /^viewport$/i.test(a.name || '')),
+    license: tagAttrs(html, 'link').some((a) => (a.rel || '').toLowerCase().split(/\s+/).includes('license')),
+  };
 }
 
 // Denominatore del rapporto semantico: solo il <body>. I tag di <head> (meta, link, title)
 // non possono per definizione essere semantici e diluivano il rapporto verso il basso.
 export function bodyHtml(html) {
   const clean = contentHtml(html);
-  const m = clean.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
-  return m ? m[1] : clean;
+  const b = pairs(clean, /<body\b[^<>]*>/gi, /<\/body>/gi)[0];
+  return b ? b.inner : clean;
 }
 
 export function semanticRatio(html) {
@@ -249,20 +286,18 @@ export function headings(html) {
   return h;
 }
 export function imgAlt(html) {
-  const imgs = contentHtml(html).match(/<img\b[^>]*>/gi) || [];
+  const imgs = contentHtml(html).match(/<img\b[^<>]*>/gi) || [];
   const withAlt = imgs.filter((i) => /\balt\s*=\s*["'][^"']*["']/i.test(i)).length;
   return { total: imgs.length, withAlt };
 }
 export function wordCount(html) {
-  const text = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
+  const text = cutBlocks(cutBlocks(String(html || ''), /<script/gi, /<\/script>/gi), /<style/gi, /<\/style>/gi)
+    .replace(/<[^<>]+>/g, ' ')
     .replace(/&[a-z#0-9]+;/gi, ' ');
   return (text.match(/[\p{L}\p{N}]{2,}/gu) || []).length;
 }
 export function links(html, host) {
-  const hrefs = [...contentHtml(html).matchAll(/<a\b[^>]*href=["\']([^"\']+)["\']/gi)].map((m) => m[1]);
+  const hrefs = [...contentHtml(html).matchAll(/<a\b[^<>]*href=["\']([^"\']+)["\']/gi)].map((m) => m[1]);
   let internal = 0, external = 0;
   for (const h of hrefs) {
     if (h.startsWith('#') || h.startsWith('mailto:') || h.startsWith('tel:') || h.startsWith('javascript:')) continue;
@@ -280,7 +315,7 @@ export function links(html, host) {
 // Testo nudo: via i tag, le entità diventano spazio, gli spazi si collassano.
 export function stripTags(html) {
   return String(html || '')
-    .replace(/<[^>]+>/g, ' ')
+    .replace(/<[^<>]+>/g, ' ')
     .replace(/&[a-z#0-9]+;/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -289,7 +324,7 @@ export function stripTags(html) {
 // Lingua dichiarata dalla pagina. Serve al check dei titoli-domanda: le parole
 // interrogative vanno cercate nella lingua del SITO, non in quella del report.
 export function htmlLang(html) {
-  const m = String(html || '').match(/<html[^>]*\slang=["']?([a-z]{2})/i);
+  const m = String(html || '').match(/<html[^<>]*\slang=["']?([a-z]{2})/i);
   return m ? m[1].toLowerCase() : null;
 }
 
@@ -309,10 +344,8 @@ function firstSentence(text) {
 // extractableBlocks, paragraphWords e citableEvidence, altrimenti un h3 di sidebar
 // ("Iscriviti alla newsletter"), un menu di link o un numero di telefono in <header>
 // si mischiano col contenuto reale — e ogni sito WordPress ha tutti e tre.
-const stripChrome = (html) => html
-  .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
-  .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
-  .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ');
+const stripChrome = (html) => [[/<nav\b/gi, /<\/nav>/gi], [/<header\b/gi, /<\/header>/gi], [/<footer\b/gi, /<\/footer>/gi]]
+  .reduce((s, [open, close]) => cutBlocks(s, open, close), html);
 
 // Parole del solo CONTENUTO (chrome escluso): wordCount(html) misura la pagina intera
 // e resta così per readabilityMetrics; qui serve lo stesso numero che sections/
@@ -327,14 +360,13 @@ export function contentWords(html) {
 // è il testo nudo fino all'heading successivo.
 export function sections(html) {
   const body = stripChrome(bodyHtml(html));
-  const re = /<h([23])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
-  const found = [];
-  let m;
-  while ((m = re.exec(body))) found.push({ heading: stripTags(m[2]), from: re.lastIndex, level: m[1] });
+  const close = { 2: /<\/h2>/gi, 3: /<\/h3>/gi };
+  const found = pairs(body, /<h([23])\b[^<>]*>/gi, (m) => close[m[1]])
+    .map((h) => ({ heading: stripTags(h.inner), from: h.end, level: h.m[1] }));
   return found.map((s, i) => {
     const chunk = body.slice(s.from, i + 1 < found.length ? found[i + 1].from : body.length);
-    const p = chunk.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i);
-    const text = stripTags(p ? p[1] : chunk);
+    const p = pairs(chunk, /<p\b[^<>]*>/gi, /<\/p>/gi)[0];
+    const text = stripTags(p ? p.inner : chunk);
     return { heading: s.heading, level: s.level, firstSentenceWords: textWords(firstSentence(text)) };
   });
 }
@@ -345,7 +377,7 @@ export function sections(html) {
 // </ul></li></ul>" veniva letto come chiuso al primo </ul>). Qui si segue la
 // profondità di apertura/chiusura invece del backreference.
 function topLevelLists(html) {
-  const re = /<(\/?)(ul|ol)\b[^>]*>/gi;
+  const re = /<(\/?)(ul|ol)\b[^<>]*>/gi;
   const blocks = [];
   let depth = 0, from = -1, m;
   while ((m = re.exec(html))) {
@@ -361,7 +393,7 @@ function topLevelLists(html) {
 // ponytail: se non c'è spazio attorno al tag annidato nell'HTML sorgente, le due parole
 // ai margini possono toccarsi senza spazio — caso raro, non coperto.
 function stripNestedLists(html) {
-  const re = /<(\/?)(ul|ol)\b[^>]*>/gi;
+  const re = /<(\/?)(ul|ol)\b[^<>]*>/gi;
   let depth = 0, last = 0, out = '', m;
   while ((m = re.exec(html))) {
     if (!m[1]) { if (depth === 0) out += html.slice(last, m.index); depth++; }
@@ -378,26 +410,26 @@ export function extractableBlocks(html) {
   const body = stripChrome(bodyHtml(html));
   let lists = 0;
   for (const listInner of topLevelLists(body)) {
-    const items = stripNestedLists(listInner).match(/<li\b[\s\S]*?<\/li>/gi) || [];
+    const items = pairs(stripNestedLists(listInner), /<li\b/gi, /<\/li>/gi).map((li) => li.outer);
     if (items.length < 3) continue;
     const linkOnly = items.filter((li) => {
       const txt = stripTags(li);
       if (!txt) return true;
-      const anchor = stripTags((li.match(/<a\b[\s\S]*?<\/a>/i) || [''])[0]);
+      const anchor = stripTags((pairs(li, /<a\b/gi, /<\/a>/gi)[0] || { outer: '' }).outer);
       return anchor.length >= txt.length * 0.8;
     }).length;
     if (linkOnly / items.length > 0.7) continue;
     lists++;
   }
-  const tables = [...body.matchAll(/<table\b[\s\S]*?<\/table>/gi)].filter((m) => /<th\b/i.test(m[0])).length;
+  const tables = pairs(body, /<table\b/gi, /<\/table>/gi).filter((t) => /<th\b/i.test(t.outer)).length;
   return { lists, tables, total: lists + tables };
 }
 
 // Distribuzione delle parole per paragrafo. I paragrafi sotto le 10 parole
 // (didascalie, note, "Leggi anche") non sono prosa: fuori dal denominatore.
 export function paragraphWords(html) {
-  const words = (stripChrome(bodyHtml(html)).match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || [])
-    .map((p) => textWords(stripTags(p)))
+  const words = pairs(stripChrome(bodyHtml(html)), /<p\b[^<>]*>/gi, /<\/p>/gi)
+    .map((p) => textWords(stripTags(p.outer)))
     .filter((n) => n >= 10);
   return { total: words.length, long: words.filter((n) => n > 120).length, words };
 }
@@ -407,7 +439,7 @@ export function paragraphWords(html) {
 // gli intervalli di match sovrapposti e si conta un gruppo fuso una volta sola.
 function countNumberTokens(text) {
   const patterns = [
-    /\d[\d.,]*\s?(?:%|€|\$|CHF|USD|EUR|km|kg|mq|m²|GB|MB|ms|s\b|min\b|ore|anni|giorni|volte|x\b)/gi,
+    /\d[\d.,]{0,30}\s?(?:%|€|\$|CHF|USD|EUR|km|kg|mq|m²|GB|MB|ms|s\b|min\b|ore|anni|giorni|volte|x\b)/gi,
     /\b(?:19|20)\d{2}\b/g,
     /\b\d{1,3}(?:[.\s]\d{3})+\b/g,
   ];
@@ -430,7 +462,7 @@ export function citableEvidence(html, host) {
   const numbers = countNumberTokens(text);
   const quotes = count(body, /<blockquote\b/gi) + count(body, /<cite\b/gi);
   let extLinks = 0;
-  for (const p of body.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || []) extLinks += links(p, host).external;
+  for (const p of pairs(body, /<p\b[^<>]*>/gi, /<\/p>/gi)) extLinks += links(p.outer, host).external;
   return { numbers, quotes, extLinks, total: numbers + quotes + extLinks };
 }
 

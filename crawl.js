@@ -18,7 +18,7 @@ export function pagesFromSitemap(xml, origin, max = 8) {
   return normalizePages(locs, origin, max);
 }
 export function pagesFromLinks(html, origin, max = 8) {
-  const hrefs = [...html.matchAll(/<a\b[^>]*href=["\']([^"\']+)["\']/gi)].map((m) => m[1]);
+  const hrefs = [...html.matchAll(/<a\b[^<>]*href=["\']([^"\']+)["\']/gi)].map((m) => m[1]);
   return normalizePages(hrefs, origin, max);
 }
 function normalizePages(list, origin, max) {

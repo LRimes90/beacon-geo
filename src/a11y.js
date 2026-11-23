@@ -6,7 +6,7 @@
 // EAA (Dir. UE 2019/882) → EN 301 549 → WCAG 2.1 AA: qui i check "a colpo sicuro".
 // i18n: analyzeA11y/summarizeAxe/auditA11y accettano `lang` (default 'it');
 // le stringhe vengono dal catalogo src/messages/ (fallback italiano).
-import { fetchText, getTitle, getMeta, imgAlt, headings, contentHtml, normUrl } from './lib.js';
+import { fetchText, getTitle, getMeta, imgAlt, headings, contentHtml, tagAttrs, normUrl } from './lib.js';
 import { remedyFor } from './remediation.js';
 import { makeT } from './messages/index.js';
 
@@ -16,26 +16,54 @@ const pct = (a, b) => (b ? (a / b) * 100 : 0);
 // Tag senza contenuto: non aprono un sottoalbero, quindi non hanno un intervallo.
 const VOID_TAGS = /^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/i;
 
-// Intervalli [start, end) del sottoalbero degli elementi che soddisfano `openRe`.
-// La chiusura si trova contando le aperture/chiusure dello stesso tag: basta per
-// markup ben formato (contenitori honeypot e <label>), che è il caso reale.
-function subtreeRanges(html, openRe) {
-  const out = [];
-  for (const m of html.matchAll(openRe)) {
-    const name = m[1];
+// Intervalli [start, end) del sottoalbero degli elementi per cui isTarget(nome, attributi) è vero.
+// La chiusura è quella che riporta a zero il conteggio aperture/chiusure dello stesso tag:
+// basta per markup ben formato (contenitori honeypot e <label>), che è il caso reale.
+// Una sola passata con una pila per nome di tag: la vecchia versione ripartiva da ogni
+// apertura fino alla chiusura, quadratica su migliaia di aperture senza chiusura (ReDoS).
+// Un'apertura mai chiusa arriva fino alla fine del documento, come prima.
+function subtreeRanges(html, isTarget) {
+  const out = [], stacks = new Map();
+  for (const m of html.matchAll(/<(\/?)([a-z][a-z0-9]*)\b([^<>]*)>/gi)) {
+    const name = m[2].toLowerCase();
     if (VOID_TAGS.test(name)) continue;
-    const re = new RegExp('</?' + name + '\\b[^>]*>', 'gi');
-    re.lastIndex = m.index + m[0].length;
-    let depth = 1, tok = null, end = html.length;
-    while ((tok = re.exec(html))) {
-      depth += tok[0][1] === '/' ? -1 : 1;
-      if (depth === 0) { end = tok.index + tok[0].length; break; }
-    }
-    out.push({ start: m.index, end, inner: html.slice(m.index + m[0].length, end) });
+    const stack = stacks.get(name) || stacks.set(name, []).get(name);
+    if (!m[1]) { stack.push(isTarget(name, m[3]) ? { start: m.index, innerStart: m.index + m[0].length } : null); continue; }
+    const r = stack.pop();
+    if (r) out.push({ ...r, end: m.index + m[0].length });
   }
+  for (const stack of stacks.values()) for (const r of stack) if (r) out.push({ ...r, end: html.length });
   return out;
 }
-const inRange = (i, ranges) => ranges.some((r) => i > r.start && i < r.end);
+
+// Verifica "il punto i sta dentro un intervallo" per punti in ordine crescente: cursore
+// sugli intervalli ordinati e massimo `end` già visto. ranges.some per ogni controllo
+// era N×M (migliaia di <label> chiuse e di <input> = secondi).
+function insideAny(ranges) {
+  const r = [...ranges].sort((a, b) => a.start - b.start);
+  let k = 0, maxEnd = -1;
+  return (i) => {
+    while (k < r.length && r[k].start < i) maxEnd = Math.max(maxEnd, r[k++].end);
+    return i < maxEnd;
+  };
+}
+
+// Posizione della prima lettera o cifra di ogni tratto di testo fuori dai tag, in ordine.
+// Un sottoalbero ha testo se una di queste cade nel suo intervallo (ricerca binaria):
+// ripulire l'interno di ogni <label> col replace era quadratico sulle <label> mai chiuse.
+function textMarks(html) {
+  const out = [];
+  let last = 0;
+  const seg = (a, b) => { const i = html.slice(a, b).search(/[\p{L}\p{N}]/u); if (i >= 0) out.push(a + i); };
+  for (const m of html.matchAll(/<[^<>]+>/g)) { seg(last, m.index); last = m.index + m[0].length; }
+  seg(last, html.length);
+  return out;
+}
+function hasMark(marks, a, b) {
+  let lo = 0, hi = marks.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (marks[mid] < a) lo = mid + 1; else hi = mid; }
+  return lo < marks.length && marks[lo] < b;
+}
 
 // Conta i controlli di form e quanti hanno un'etichetta accessibile.
 // "labeled" = ha aria-label/aria-labelledby, un <label for=id> che lo referenzia,
@@ -46,25 +74,24 @@ const inRange = (i, ranges) => ranges.some((r) => i > r.start && i < r.end);
 // accessibility tree, chiedere una label sarebbe un falso positivo).
 export function accessibleFormLabels(html) {
   const clean = contentHtml(html);
-  const labelFor = new Set(
-    [...clean.matchAll(/<label\b[^>]*\bfor\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1])
-  );
-  const hiddenRanges = subtreeRanges(clean, /<([a-z][a-z0-9]*)\b[^>]*\baria-hidden\s*=\s*["']true["'][^>]*>/gi);
+  const labelFor = new Set(tagAttrs(clean, 'label').map((a) => a.for).filter(Boolean));
+  const inHidden = insideAny(subtreeRanges(clean, (name, attrs) => /\baria-hidden\s*=\s*["']true["']/i.test(attrs)));
   // Solo le label con testo proprio: un <label> vuoto non etichetta nulla.
-  const labelRanges = subtreeRanges(clean, /<(label)\b[^>]*>/gi)
-    .filter((r) => /[\p{L}\p{N}]/u.test(r.inner.replace(/<[^>]+>/g, ' ')));
+  const marks = textMarks(clean);
+  const inLabel = insideAny(subtreeRanges(clean, (name) => name === 'label')
+    .filter((r) => hasMark(marks, r.innerStart, r.end)));
   const skip = /\btype\s*=\s*["'](hidden|submit|button|image|reset)["']/i;
   let total = 0, labeled = 0;
-  for (const m of clean.matchAll(/<(input|select|textarea)\b[^>]*>/gi)) {
+  for (const m of clean.matchAll(/<(input|select|textarea)\b[^<>]*>/gi)) {
     const tag = m[0];
     if (/^<input/i.test(tag) && skip.test(tag)) continue; // non richiede label
-    if (inRange(m.index, hiddenRanges)) continue;         // fuori dalla accessibility tree
+    if (inHidden(m.index)) continue;                      // fuori dalla accessibility tree
     total++;
     const id = (tag.match(/\bid\s*=\s*["']([^"']+)["']/i) || [])[1];
     const hasAria = /\baria-label\s*=\s*["'][^"']+["']/i.test(tag) ||
                     /\baria-labelledby\s*=\s*["'][^"']+["']/i.test(tag);
     const hasTitle = /\btitle\s*=\s*["'][^"']+["']/i.test(tag);
-    if (hasAria || (id && labelFor.has(id)) || hasTitle || inRange(m.index, labelRanges)) labeled++;
+    if (hasAria || (id && labelFor.has(id)) || hasTitle || inLabel(m.index)) labeled++;
   }
   return { total, labeled };
 }
@@ -80,7 +107,7 @@ function headingIssues(h) {
 // Analizzatore PURO: riceve l'HTML, ritorna { score, checks } come gli altri.
 export function analyzeA11y(html, lang = 'it') {
   const t = makeT(lang);
-  const hasLang = /<html\b[^>]*\blang\s*=\s*["'][a-z]/i.test(html);
+  const hasLang = /<html\b[^<>]*\blang\s*=\s*["'][a-z]/i.test(html);
   const title = getTitle(html) || '';
   const alt = imgAlt(html);
   const h = headingIssues(headings(html));
