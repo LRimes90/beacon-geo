@@ -9,6 +9,7 @@ import { summarizePsi } from './src/perf.js';
 import { generateStatement } from './src/statement.js';
 import { remedyFor, REMEDIATION } from './src/remediation.js';
 import { toHtmlSuite, toMarkdownSuite } from './src/suiteReport.js';
+import { auditAll } from './src/suite.js';
 import { snapshot, diff } from './src/history.js';
 import { rateLimit, verifyTurnstile } from './src/guard.js';
 import { renderHtml } from './src/render.js';
@@ -20,8 +21,13 @@ import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
 import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
 import { deriveObligations, decideVerdict, assessAiAct, euEvidence, coverage, OBLIGATIONS, QUESTIONS, SHOW_IF } from './src/aiactAssess.js';
 import { QUESTION_TEXT, REQUIRED } from './web/app/aiact/questions.mjs';
+import { rigaCategoria } from './web/app/report/riga.mjs';
 import fs from 'node:fs';
 import { en } from './web/app/translations/en.js';
+import { de as UI_DE } from './web/app/translations/de.js';
+import { fr as UI_FR } from './web/app/translations/fr.js';
+import { es as UI_ES } from './web/app/translations/es.js';
+import { pt as UI_PT } from './web/app/translations/pt.js';
 import { msg, errorText } from './src/messages/index.js';
 import { it as DIZ_IT } from './src/messages/it.js';
 import { en as DIZ_EN } from './src/messages/en.js';
@@ -511,7 +517,8 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(md.includes('## GEO') && md.includes('## Accessibilità') && md.includes('## Performance'), 'suite md: 3 sezioni');
   // degrado: perf non disponibile (chiave PSI mancante) → non deve rompere
   const partial = toHtmlSuite({ url: 'https://y.com/', host: 'y.com', geo: { ...suite.geo, host: 'y.com' }, a11y: suite.a11y, perf: { ok: false, reason: 'quota' } }, {});
-  ok(partial.includes('chiave PSI mancante'), 'suite html: performance assente degrada con nota');
+  ok(partial.includes('PageSpeed non disponibile') && !partial.includes('chiave PSI'), 'suite html: performance assente degrada con nota neutra');
+  ok(md.includes('## Performance — 91/100 (Lighthouse · mobile)'), 'suite md: intestazione Performance indica la strategia');
 
   // fix round 2: gemello di normalize() usato da suiteReport.js — un suite.geo con
   // cinque categorie (client vecchio, come nel finding 4 di report.js) non deve
@@ -587,6 +594,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
         'cumulative-layout-shift': { numericValue: 0.3, displayValue: '0.3' },
         'total-blocking-time': { numericValue: 150, displayValue: '150 ms' },
         'unused-css-rules': { title: 'Rimuovi CSS inutilizzato', details: { type: 'opportunity', overallSavingsMs: 800 } },
+        'server-response-time': { title: 'Tempo di risposta breve', score: 1, details: { type: 'opportunity', overallSavingsMs: 5 } },
       },
     },
     loadingExperience: { overall_category: 'FAST' },
@@ -595,6 +603,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(s.metrics.find((m) => m.id === 'largest-contentful-paint').status === 'good', 'psi: LCP 2.1s → good');
   ok(s.metrics.find((m) => m.id === 'cumulative-layout-shift').status === 'crit', 'psi: CLS 0.3 → crit');
   ok(s.opportunities[0].savingsMs === 800, 'psi: opportunità estratta e ordinata');
+  ok(!s.opportunities.some((o) => o.title === 'Tempo di risposta breve'), 'psi: audit già superato (score 1) escluso dalle opportunità');
   ok(s.field && s.field.category === 'FAST', 'psi: dato reale utenti (CrUX)');
   ok(summarizePsi({}) === null, 'psi: JSON senza lighthouseResult → null');
 }
@@ -1355,6 +1364,73 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
 
   ok(cases > 500000, `aiact/invarianti: combinazioni generate (${cases})`);
   ok(bad.size === 0, `aiact/invarianti: nessuna violazione — ${[...bad].map(([k, c]) => k + ' ' + c).join(' || ')}`);
+}
+
+// report/ui: ogni t('…') letterale di /report ha la voce nei 5 dizionari. La chiave è la
+// stringa italiana: senza voce, il sito inglese mostra l'italiano e nessun errore lo segnala.
+{
+  const src = ['./web/app/report/page.jsx', './web/app/report/riga.mjs'].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+  const chiavi = [...src.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'"));
+  ok(chiavi.length > 20, `report/ui: chiavi t() estratte (${chiavi.length})`);
+  const diz = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
+  const mancanti = Object.entries(diz).flatMap(([l, d]) => chiavi.filter((k) => !d[k]).map((k) => l + ': ' + k));
+  ok(mancanti.length === 0, `report/ui: ogni t('…') tradotto in en de fr es pt (mancanti: ${mancanti.slice(0, 4).join(' | ')})`);
+  // le etichette di categoria passano da t(LABELS[k]): dinamiche, la regex sopra non le vede
+  for (const f of ['./web/app/report/page.jsx', './web/app/page.jsx']) {
+    const blocco = (fs.readFileSync(f, 'utf8').match(/const LABELS = \{([^}]*)\}/) || [])[1] || '';
+    const etichette = [...blocco.matchAll(/:\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1]);
+    ok(etichette.length === 6, `report/ui: ${f} ha 6 etichette LABELS (${etichette.length})`);
+    const senza = Object.entries(diz).flatMap(([l, d]) => etichette.filter((k) => !d[k]).map((k) => l + ': ' + k));
+    ok(senza.length === 0, `report/ui: etichette LABELS di ${f} tradotte (mancanti: ${senza.slice(0, 4).join(' | ')})`);
+  }
+}
+
+// report/riga: la riga sotto ogni categoria GEO deve spiegare il voto, anche quando a
+// toglierlo è un controllo informativo (off-site 60/100 con CCBot ok e sito fuori da Common Crawl)
+{
+  const id = (s) => s;
+  const offsite = rigaCategoria([{ name: 'CCBot', status: 'good' }, { name: 'Presenza in Common Crawl', status: 'info' }], id);
+  ok(offsite.includes('Presenza in Common Crawl'), `report/riga: off-site nomina il controllo informativo che pesa sul 60 («${offsite}»)`);
+  ok(offsite.startsWith('1/1 controlli ok'), `report/riga: conteggio solo sui non-informativi («${offsite}»)`);
+  const soloInfo = rigaCategoria([{ name: 'Non misurato', status: 'info' }], id);
+  ok(!soloInfo.includes('0/0') && soloInfo.includes('Non misurato'), `report/riga: categoria solo-info senza «0/0» e con il nome («${soloInfo}»)`);
+  const misto = rigaCategoria([{ name: 'A', status: 'good' }, { name: 'B', status: 'warn' }, { name: 'C', status: 'crit' }], id);
+  ok(misto === '1/3 controlli ok · B, C', `report/riga: problemi elencati dopo il conteggio («${misto}»)`);
+}
+
+// rifiniture /report (minori della review finale)
+{
+  const src = fs.readFileSync('./web/app/report/page.jsx', 'utf8');
+  // PSI fallisce per quota/timeout anche CON la chiave: la nota non deve dare la colpa alla chiave
+  ok(!src.includes("t('chiave PSI mancante')") && src.includes("t('PageSpeed non disponibile')"), 'report: nota PSI neutra');
+  // sotto i 240 px utili (zoom 200%) la griglia non deve sbordare
+  ok(src.includes('minmax(min(240px, 100%), 1fr)'), 'report: griglia senza overflow sotto 240 px');
+  // lo storico è solo mobile: con lo switch su Computer la riga delta deve dirlo
+  ok(src.includes("label={`Performance (${t('Dispositivi mobili')})`}"), 'report: delta Performance etichettata mobile');
+  // catalogo motore: la categoria answerability era rimasta in italiano in 5 lingue
+  const UI = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
+  for (const [l, d] of Object.entries(UI)) {
+    ok(msg(l, 'category.answerability') === d['Risposta pronta per le AI'], `i18n motore: category.answerability tradotta in ${l} («${msg(l, 'category.answerability')}»)`);
+  }
+}
+
+// auditAll: con strategy 'desktop' la PSI desktop c'è già, niente seconda chiamata identica.
+// Rete spenta: fetch stub conta solo le chiamate PSI; 127.0.0.1 ferma GEO e a11y al guard SSRF.
+{
+  const realFetch = globalThis.fetch;
+  const psi = [];
+  globalThis.fetch = async (u) => {
+    if (String(u).includes('pagespeedonline')) psi.push(new URL(u).searchParams.get('strategy'));
+    throw new Error('rete spenta nel test');
+  };
+  try {
+    const r = await auditAll('http://127.0.0.1/', { strategy: 'desktop', desktop: true });
+    ok(psi.join(',') === 'desktop', `suite: strategy desktop fa UNA chiamata PSI (${psi.join(',')})`);
+    ok(r.perfDesktop === r.perf, 'suite: perfDesktop riusa perf quando la strategia è già desktop');
+    psi.length = 0;
+    const m = await auditAll('http://127.0.0.1/', { desktop: true });
+    ok(psi.sort().join(',') === 'desktop,mobile' && m.perfDesktop && m.perfDesktop.strategy === 'desktop', `suite: mobile + desktop in parallelo (${psi.join(',')})`);
+  } finally { globalThis.fetch = realFetch; }
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

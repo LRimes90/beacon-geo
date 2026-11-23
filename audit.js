@@ -223,8 +223,8 @@ async function latestCcIndex() {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 6000);
-    const res = await fetch('https://index.commoncrawl.org/collinfo.json', { signal: ctrl.signal });
-    clearTimeout(t);
+    // clearTimeout nel finally: se la fetch lancia, il timer non tiene vivo il processo per 6 s
+    const res = await fetch('https://index.commoncrawl.org/collinfo.json', { signal: ctrl.signal }).finally(() => clearTimeout(t));
     if (!res.ok) return CC_FALLBACK_INDEX;
     const list = await res.json();
     // collinfo.json è ordinato dal più recente; "id" è già nella forma CC-MAIN-YYYY-WW.
@@ -244,8 +244,7 @@ async function commonCrawl(host) {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 15000);
-      const res = await fetch(url, { signal: ctrl.signal });
-      clearTimeout(t);
+      const res = await fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(t));
       // 404 = nessuna cattura per quell'host: risposta valida, non indisponibilità.
       if (res.status === 404) return false;
       if (!res.ok) continue;

@@ -18,7 +18,7 @@ export async function POST(req) {
   const blocked = await guard(req, body); if (blocked) return blocked;
   try {
     // lang: whitelist it/en/de/fr/es/pt (qualunque altro valore → 'it'), propagata ai 3 tool
-    const r = await auditAll(url, { renderJs: !!renderJs, strategy: strategy === 'desktop' ? 'desktop' : 'mobile', psiKey: process.env.PAGESPEED_KEY, lang: l });
+    const r = await auditAll(url, { renderJs: !!renderJs, strategy: strategy === 'desktop' ? 'desktop' : 'mobile', psiKey: process.env.PAGESPEED_KEY, lang: l, desktop: true });
     if (r.geo && r.geo.html) delete r.geo.html; // non rispedire l'HTML grezzo
     // storico: confronto con la scansione precedente (before-after). Non critico: se fallisce, il risultato esce comunque.
     try {

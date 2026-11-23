@@ -3,6 +3,7 @@ import { useState } from 'react';
 import ToolNav from '../nav';
 import Turnstile from '../turnstile';
 import { useLang, Rich } from '../i18n';
+import { rigaCategoria } from './riga.mjs';
 
 const col = (s) => (s >= 80 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : s >= 40 ? 'var(--mid)' : 'var(--crit)');
 const colPerf = (s) => (s >= 90 ? 'var(--good)' : s >= 50 ? 'var(--warn)' : 'var(--crit)');
@@ -14,6 +15,112 @@ function DeltaRow({ label, d, invert }) {
   const better = invert ? d < 0 : d > 0;
   const c = same ? 'var(--muted)' : better ? 'var(--good)' : 'var(--crit)';
   return <li style={{ color: 'var(--muted)' }}><span style={{ color: c }}>{same ? '=' : better ? '▲' : '▼'}</span> {label}: <b style={{ color: c }}>{d > 0 ? '+' : ''}{d}</b></li>;
+}
+
+// nomi categoria GEO: stesse chiavi tradotte di app/page.jsx
+const LABELS = {
+  access: 'Accesso AI', agentFiles: 'File per agenti e AI', structured: 'Dati strutturati e SEO',
+  readability: 'Leggibilità per le macchine', answerability: 'Risposta pronta per le AI', offsite: 'Visibilità off-site',
+};
+// chiamate t con stringa letterale: il test di copertura di test.js le trova e pretende la traduzione
+const verdetto = (t, s) => (s >= 80 ? t('Buono') : s >= 60 ? t('Discreto') : s >= 40 ? t('Da migliorare') : t('Critico'));
+const verdettoPerf = (t, s) => (s >= 90 ? t('Buono') : s >= 50 ? t('Da migliorare') : t('Critico'));
+const PIN = { good: ['pin', '✓'], crit: ['pc', '✕'], bad: ['pc', '✕'], warn: ['pn', '!'] };
+const pin = (s) => PIN[s] || ['pn', '○'];
+const STATO = { good: 'var(--good)', warn: 'var(--warn)', crit: 'var(--crit)' };
+const GRID = 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))'; // a 360 px una colonna; min() evita lo sbordo sotto 240 px (zoom)
+// «Da sistemare»: prima i critici, poi gli avvisi; gli informativi non sono difetti
+const fixesOf = (checks) => [...checks.filter((c) => c.status === 'crit'), ...checks.filter((c) => c.status === 'warn')].map((c) => c.fix).filter(Boolean);
+
+// Sezione di dettaglio sotto i riquadri: cosa è stato analizzato e cosa sistemare.
+function Detail({ title, info, score, c, verdict, desc, children, fixes = [] }) {
+  const { t } = useLang();
+  return (
+    <section className="rights" style={{ marginTop: 18 }}>
+      <div className="rt" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <span>{title} <span className="info">· {info}</span></span>
+        {score != null && <span style={{ font: '700 15px var(--mono)', color: c, letterSpacing: 0 }}>{score}/100 · {verdict}</span>}
+      </div>
+      <p style={{ fontSize: 13.5, color: 'var(--muted)', maxWidth: '70ch', margin: '6px 0 0' }}>{desc}</p>
+      {children}
+      {fixes.length > 0 && (
+        <div style={{ borderTop: '1px solid var(--card-line)', marginTop: 14, paddingTop: 10 }}>
+          <div style={{ font: '600 11px var(--mono)', textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--warn)' }}>{t('Da sistemare')}</div>
+          <ul style={{ marginTop: 8 }}>{fixes.slice(0, 3).map((f, i) => <li key={i}>→ {f}</li>)}</ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function GeoDetail({ geo }) {
+  const { t } = useLang();
+  const cats = Object.keys(LABELS).filter((k) => geo.categories && geo.categories[k]);
+  const all = cats.flatMap((k) => geo.categories[k].checks || []);
+  return (
+    <Detail title="GEO / AI" info={`${cats.length} ${t('aree')} · ${all.length} ${t('controlli')}`} score={geo.overall} c={col(geo.overall)} verdict={verdetto(t, geo.overall)}
+      desc={t('Quanto il sito è leggibile e citabile da ChatGPT, Perplexity e Google AI: accesso dei crawler, file per gli agenti, dati strutturati, testo leggibile, risposte pronte, presenza fuori dal sito.')}
+      fixes={fixesOf(all)}>
+      <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: '14px 22px', marginTop: 14 }}>
+        {cats.map((k) => {
+          const cat = geo.categories[k];
+          const checks = cat.checks || [];
+          const riga = rigaCategoria(checks, t);
+          const s = cat.unmeasured ? null : cat.score;
+          return (
+            <div className="cat" key={k}>
+              <div className="top"><span className="lab">{t(LABELS[k])}</span><span className="val" style={{ color: s == null ? 'var(--faint)' : col(s) }}>{s == null ? '—' : s}</span></div>
+              <div className="bar" style={{ height: 7 }}>{s != null && <i style={{ width: s + '%', background: col(s) }} />}</div>
+              <div style={{ fontSize: 12, color: 'var(--faint)', marginTop: 6 }}>{riga}</div>
+            </div>
+          );
+        })}
+      </div>
+    </Detail>
+  );
+}
+
+function A11yDetail({ a11y }) {
+  const { t } = useLang();
+  const { score, checks = [] } = a11y.result;
+  return (
+    <Detail title={t('Accessibilità')} info={`${checks.length} ${t('controlli WCAG 2.1 · statici')}`} score={score} c={col(score)} verdict={verdetto(t, score)}
+      desc={t('Controlli WCAG 2.1 sull\'HTML servito: lingua, titoli, testi alternativi, etichette dei form, zoom, contrasto.')}
+      fixes={fixesOf(checks)}>
+      <ul style={{ gridTemplateColumns: GRID, gap: '9px 22px', marginTop: 14 }}>
+        {checks.map((c, i) => {
+          const [cls, ico] = pin(c.status);
+          return <li key={i}><span className={cls}>{ico}</span><span><span style={{ color: 'var(--ink)' }}>{c.name}</span><br /><span style={{ fontSize: 12, color: 'var(--faint)' }}>{c.detail}</span></span></li>;
+        })}
+      </ul>
+    </Detail>
+  );
+}
+
+function PerfDetail({ perf, device }) {
+  const { t, lang } = useLang();
+  const info = 'Lighthouse · ' + (device === 'desktop' ? t('Computer') : t('Dispositivi mobili'));
+  const desc = t('Velocità misurata in laboratorio sui Core Web Vitals, gli stessi indicatori che Google usa per valutare l\'esperienza.');
+  // PSI desktop/mobile assente o fallito (chiave, quota, risposta senza perfDesktop): solo la nota
+  if (!perf || !perf.ok || !perf.result) {
+    return <Detail title="Performance" info={info} desc={desc}><p className="info" style={{ marginTop: 10 }} title={perf && (perf.reason || perf.error)}>{t('PageSpeed non disponibile')}</p></Detail>;
+  }
+  const { score, metrics = [], opportunities = [] } = perf.result;
+  const nf = new Intl.NumberFormat(lang, { maximumFractionDigits: 1 });
+  const ms = (v) => (v >= 1000 ? nf.format(v / 1000) + ' s' : v + ' ms');
+  return (
+    <Detail title="Performance" info={info} score={score} c={colPerf(score)} verdict={verdettoPerf(t, score)} desc={desc}
+      fixes={opportunities.map((o) => `${o.title} (~${ms(o.savingsMs)})`)}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 14 }}>
+        {metrics.map((m) => (
+          <div key={m.id} title={m.name} style={{ border: '1px solid var(--card-line)', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ font: '600 11px var(--mono)', color: 'var(--faint)' }}>{m.name.split(' · ')[0]}</div>
+            <div style={{ font: '700 20px var(--serif)', color: STATO[m.status] || 'var(--ink)' }}>{m.detail}</div>
+          </div>
+        ))}
+      </div>
+    </Detail>
+  );
 }
 
 function Card({ label, score, sub, c }) {
@@ -35,6 +142,7 @@ export default function Report() {
   const [res, setRes] = useState(null);
   const [err, setErr] = useState('');
   const [tk, setTk] = useState(''); // token Turnstile (vuoto = inerte)
+  const [device, setDevice] = useState('mobile'); // switch Performance; resta tra una scansione e l'altra
 
   async function run(e) {
     e.preventDefault();
@@ -67,7 +175,9 @@ export default function Report() {
   const geoScore = res && res.geo && !res.geo.error ? res.geo.overall : null;
   const a11yScore = res && res.a11y && !res.a11y.error && res.a11y.result ? res.a11y.result.score : null;
   const axeV = res && res.a11y && res.a11y.axe && res.a11y.axe.ok ? res.a11y.axe.counts.violations : null;
-  const perfScore = res && res.perf && res.perf.ok ? res.perf.result.score : null;
+  // riquadro e sezione Performance seguono lo switch; storico e delta restano su res.perf (mobile)
+  const perfObj = res ? (device === 'desktop' ? res.perfDesktop : res.perf) : null;
+  const perfScore = perfObj && perfObj.ok && perfObj.result ? perfObj.result.score : null;
 
   return (
     <>
@@ -92,10 +202,17 @@ export default function Report() {
 
         {res && (
           <section className="result">
+            {/* aria-pressed e non role="tab": cambia solo la Performance, non è un pannello a schede */}
+            <div role="group" aria-label={t('Dispositivo')} style={{ display: 'inline-flex', gap: 4, padding: 4, marginBottom: 12, border: '1px solid var(--card-line)', borderRadius: 999 }}>
+              {[['mobile', t('Dispositivi mobili')], ['desktop', t('Computer')]].map(([k, lab]) => (
+                <button key={k} type="button" aria-pressed={device === k} onClick={() => setDevice(k)}
+                  style={{ border: 0, borderRadius: 999, padding: '7px 14px', cursor: 'pointer', font: '600 13px var(--mono)', background: device === k ? 'var(--beam)' : 'transparent', color: device === k ? '#062018' : 'var(--muted)' }}>{lab}</button>
+              ))}
+            </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <Card label="GEO / AI" score={geoScore} sub={geoScore == null ? t('n/d') : 'AI-readiness'} c={col(geoScore || 0)} />
               <Card label={t('Accessibilità')} score={a11yScore} sub={axeV == null ? t('solo statico') : axeV + ' ' + t('violazioni axe')} c={col(a11yScore || 0)} />
-              <Card label="Performance" score={perfScore} sub={perfScore == null ? t('chiave PSI mancante') : 'Lighthouse'} c={colPerf(perfScore || 0)} />
+              <Card label="Performance" score={perfScore} sub={perfScore == null ? t('PageSpeed non disponibile') : 'Lighthouse'} c={colPerf(perfScore || 0)} />
             </div>
 
             <aside className="notice" style={{ marginTop: 18 }}>
@@ -113,11 +230,15 @@ export default function Report() {
                 <ul>
                   <DeltaRow label="GEO" d={res.history.delta.geo} />
                   <DeltaRow label={t('Accessibilità')} d={res.history.delta.a11y} />
-                  <DeltaRow label="Performance" d={res.history.delta.perf} />
+                  <DeltaRow label={`Performance (${t('Dispositivi mobili')})`} d={res.history.delta.perf} />
                   <DeltaRow label={t('Violazioni axe')} d={res.history.delta.axe} invert />
                 </ul>
               </section>
             )}
+
+            {geoScore != null && <GeoDetail geo={res.geo} />}
+            {a11yScore != null && <A11yDetail a11y={res.a11y} />}
+            <PerfDetail perf={perfObj} device={device} />
 
             <div style={{ marginTop: 20, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <button type="button" className="dl" onClick={() => download('pdf')} disabled={busy === 'pdf'}>{busy === 'pdf' ? t('Genero…') : '⬇ ' + t('Report PDF')}</button>

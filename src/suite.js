@@ -8,14 +8,22 @@ import { normUrl } from './lib.js';
 
 // i18n: `lang` (default 'it') viene propagato ai 3 tool e riportato nel risultato,
 // così il report scaricabile può riusare la stessa lingua della scansione.
-export async function auditAll(rawUrl, { renderJs = false, strategy = 'mobile', psiKey, lang = 'it' } = {}) {
+export async function auditAll(rawUrl, { renderJs = false, strategy = 'mobile', psiKey, lang = 'it', desktop = false } = {}) {
   const url = normUrl(rawUrl);
   const host = new URL(url).host;
-  const [geo, a11y, perf] = await Promise.allSettled([
+  // `desktop`: PSI computer in parallelo, per lo switch mobile/computer di /report (istantaneo,
+  // tempo totale invariato). Spento di default: il confronto multi-sito non lo usa.
+  // Storico e delta restano su `perf` (gli snapshot passati sono mobile).
+  // Con strategy già 'desktop' la seconda chiamata sarebbe identica: si riusa `perf` (quota PSI).
+  const extraDesktop = desktop && strategy !== 'desktop';
+  const [geo, a11y, perf, perfDesktop] = await Promise.allSettled([
     audit(url, { renderJs, lang }),
     auditA11y(url, { deep: true, lang }),
     auditPerf(url, { strategy, key: psiKey, lang }),
+    extraDesktop ? auditPerf(url, { strategy: 'desktop', key: psiKey, lang }) : null,
   ]);
   const val = (s) => (s.status === 'fulfilled' ? s.value : { error: String(s.reason).slice(0, 140) });
-  return { url, host, lang, geo: val(geo), a11y: val(a11y), perf: val(perf) };
+  const r = { url, host, lang, geo: val(geo), a11y: val(a11y), perf: val(perf) };
+  if (desktop) r.perfDesktop = extraDesktop ? val(perfDesktop) : r.perf;
+  return r;
 }
