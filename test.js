@@ -1287,6 +1287,14 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     const buchi = dizionari.it.filter((k) => !dizionari[lang].includes(k));
     ok(buchi.length === 0, `catalogo ${lang}: nessuna chiave mancante rispetto all'italiano (${buchi.length ? buchi.slice(0, 5).join(',') + '…' : 'nessuna'})`);
   }
+  // Chiave presente ma testo italiano copiato: answerability e agentReady sono arrivati
+  // così in 5 lingue senza che il controllo sulle chiavi se ne accorgesse.
+  // Ammessi uguali all'italiano solo sigle, codice (remedy.*) e parole identiche nella lingua.
+  const UGUALI_OK = /^(remedy\.|axe\.nd$|suite\.card\.nd$|report\.date$|structured\.(meta\.name|signals\.detail)$|rights\.(signal\.name|tdmrep\.name|tdmrep\.detail\.ok)$|tech\.(https\.name|status\.detail\.ok|viewport\.name|viewport\.detail\.ok)$|a11y\.headings\.detail$|agentFiles\.llms\.detail\.ok$|agentReady\.(usage|botauth)\.name$)/;
+  for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
+    const copiati = dizionari.it.filter((k) => !UGUALI_OK.test(k) && DIZ[lang][k] === DIZ_IT[k]);
+    ok(copiati.length === 0, `catalogo ${lang}: nessun testo copiato dall'italiano (${copiati.slice(0, 5).join(',') || 'nessuno'})`);
+  }
 
   // errorText: col code traduce, senza code NON restituisce il messaggio originale.
   // È la regola di sicurezza dell'impianto: il testo di Node nomina l'infrastruttura
