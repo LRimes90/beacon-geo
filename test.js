@@ -22,6 +22,10 @@ import { deriveObligations, decideVerdict, assessAiAct, euEvidence, coverage, OB
 import { QUESTION_TEXT, REQUIRED } from './web/app/aiact/questions.mjs';
 import fs from 'node:fs';
 import { en } from './web/app/translations/en.js';
+import { de as UI_DE } from './web/app/translations/de.js';
+import { fr as UI_FR } from './web/app/translations/fr.js';
+import { es as UI_ES } from './web/app/translations/es.js';
+import { pt as UI_PT } from './web/app/translations/pt.js';
 import { msg, errorText } from './src/messages/index.js';
 import { it as DIZ_IT } from './src/messages/it.js';
 import { en as DIZ_EN } from './src/messages/en.js';
@@ -1357,6 +1361,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
 
   ok(cases > 500000, `aiact/invarianti: combinazioni generate (${cases})`);
   ok(bad.size === 0, `aiact/invarianti: nessuna violazione — ${[...bad].map(([k, c]) => k + ' ' + c).join(' || ')}`);
+}
+
+// report/ui: ogni t('…') letterale di /report ha la voce nei 5 dizionari. La chiave è la
+// stringa italiana: senza voce, il sito inglese mostra l'italiano e nessun errore lo segnala.
+{
+  const src = fs.readFileSync('./web/app/report/page.jsx', 'utf8');
+  const chiavi = [...src.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'"));
+  ok(chiavi.length > 20, `report/ui: chiavi t() estratte (${chiavi.length})`);
+  const diz = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
+  const mancanti = Object.entries(diz).flatMap(([l, d]) => chiavi.filter((k) => !d[k]).map((k) => l + ': ' + k));
+  ok(mancanti.length === 0, `report/ui: ogni t('…') tradotto in en de fr es pt (mancanti: ${mancanti.slice(0, 4).join(' | ')})`);
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

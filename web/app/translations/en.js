@@ -252,4 +252,16 @@ export const en = {
   "Raccoglie volti in massa dal web o dalle telecamere": "Scrapes faces at scale from the web or CCTV",
   "Usa tecniche subliminali o sfrutta vulnerabilità (età, disabilità, condizione economica)": "Uses subliminal techniques or exploits vulnerabilities (age, disability, economic situation)",
   "Prevede il rischio che una persona commetta un reato": "Predicts the risk of a person committing a crime",
+  // /report: sezioni di dettaglio e switch mobile/computer
+  "aree": "areas",
+  "controlli": "checks",
+  "controlli ok": "checks ok",
+  "informativi": "informational",
+  "controlli WCAG 2.1 · statici": "WCAG 2.1 · static checks",
+  "Dispositivi mobili": "Mobile",
+  "Computer": "Desktop",
+  "Dispositivo": "Device",
+  "Quanto il sito è leggibile e citabile da ChatGPT, Perplexity e Google AI: accesso dei crawler, file per gli agenti, dati strutturati, testo leggibile, risposte pronte, presenza fuori dal sito.": "How readable and citable the site is by ChatGPT, Perplexity and Google AI: crawler access, files for agents, structured data, readable text, ready answers, off-site presence.",
+  "Controlli WCAG 2.1 sull'HTML servito: lingua, titoli, testi alternativi, etichette dei form, zoom, contrasto.": "WCAG 2.1 checks on the served HTML: language, headings, alt text, form labels, zoom, contrast.",
+  "Velocità misurata in laboratorio sui Core Web Vitals, gli stessi indicatori che Google usa per valutare l'esperienza.": "Speed measured in the lab on the Core Web Vitals, the same metrics Google uses to assess user experience.",
 };

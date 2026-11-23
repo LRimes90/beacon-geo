@@ -106,4 +106,16 @@ export const de = {
   "violazioni": "Verstöße",
   "violazioni axe": "axe-Verstöße",
   "È diagnostico — mostra i problemi, non li corregge": "Es ist diagnostisch — zeigt die Probleme, behebt sie aber nicht",
+  // /report: sezioni di dettaglio e switch mobile/computer
+  "aree": "Bereiche",
+  "controlli": "Prüfungen",
+  "controlli ok": "Prüfungen ok",
+  "informativi": "informative",
+  "controlli WCAG 2.1 · statici": "WCAG 2.1 · statische Prüfungen",
+  "Dispositivi mobili": "Mobilgeräte",
+  "Computer": "Desktop",
+  "Dispositivo": "Gerät",
+  "Quanto il sito è leggibile e citabile da ChatGPT, Perplexity e Google AI: accesso dei crawler, file per gli agenti, dati strutturati, testo leggibile, risposte pronte, presenza fuori dal sito.": "Wie lesbar und zitierfähig die Website für ChatGPT, Perplexity und Google AI ist: Crawler-Zugriff, Dateien für Agenten, strukturierte Daten, lesbarer Text, fertige Antworten, Präsenz außerhalb der Website.",
+  "Controlli WCAG 2.1 sull'HTML servito: lingua, titoli, testi alternativi, etichette dei form, zoom, contrasto.": "WCAG 2.1-Prüfungen am ausgelieferten HTML: Sprache, Überschriften, Alternativtexte, Formularbeschriftungen, Zoom, Kontrast.",
+  "Velocità misurata in laboratorio sui Core Web Vitals, gli stessi indicatori che Google usa per valutare l'esperienza.": "Geschwindigkeit im Lab gemessen anhand von Core Web Vitals, denselben Metriken, die Google zur Bewertung der Erfahrung verwendet.",
 };
