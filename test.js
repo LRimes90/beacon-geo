@@ -1459,9 +1459,12 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(!pubAll.e && pubAll.a.length === 1 && pubAll.a[0].address === '8.8.8.8', 'rebind: IP pubblico passa (firma con all)');
 
   let hits = 0;
+  let srvClose = () => {};
   const srv = http.createServer((req, res) => {
     hits++;
+    req.socket.on('close', () => srvClose(true));
     if (req.url === '/gz') { res.writeHead(200, { 'content-encoding': 'gzip', 'set-cookie': ['a=1', 'b=2'], 'content-type': 'text/plain' }); res.end(zlib.gzipSync('ciao gzip')); }
+    else if (req.url === '/slow') { res.writeHead(200, { 'content-encoding': 'gzip' }); const z = zlib.createGzip(); z.pipe(res); z.write('x'.repeat(1000)); z.flush(); }
     else if (req.url === '/204') { res.writeHead(204); res.end(); }
     else if (req.url === '/301') { res.writeHead(301, { location: '/dest' }); res.end(); }
     else { res.end('ok'); }
@@ -1484,6 +1487,13 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     const g = await pinnedFetch(`http://x.test:${port}/gz`, { _lookup: open });
     ok(g.status === 200 && (await g.text()) === 'ciao gzip', 'pinnedFetch: corpo gzip decompresso');
     ok(g.headers.getSetCookie().length === 2 && !g.headers.has('content-encoding'), 'pinnedFetch: header multipli preservati');
+    // cancel del corpo gzip: il socket lato server deve chiudersi entro 1 s
+    const closed = new Promise((r) => { srvClose = r; });
+    const big = await pinnedFetch(`http://x.test:${port}/slow`, { _lookup: open });
+    const rd = big.body.getReader();
+    await rd.read();
+    await rd.cancel();
+    ok(await Promise.race([closed, new Promise((r) => setTimeout(() => r(false), 1000))]) === true, 'pinnedFetch: cancel su gzip chiude il socket lato server');
     const n = await pinnedFetch(`http://x.test:${port}/204`, { _lookup: open });
     ok(n.status === 204 && n.body === null, 'pinnedFetch: 204 con corpo null');
     const m = await pinnedFetch(`http://x.test:${port}/301`, { redirect: 'manual', _lookup: open });

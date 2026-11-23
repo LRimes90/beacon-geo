@@ -9,7 +9,7 @@ import net from 'node:net';
 import http from 'node:http';
 import https from 'node:https';
 import zlib from 'node:zlib';
-import { Readable } from 'node:stream';
+import { Readable, pipeline } from 'node:stream';
 
 // Oltre al messaggio, l'errore porta un `code` e il `detail` che lo ha causato
 // (host, IP, schema). Il messaggio serve ai log e alla CLI e resta in italiano;
@@ -153,12 +153,14 @@ export function pinnedFetch(url, init = {}) {
         : enc === 'deflate' ? zlib.createInflate()
         : enc === 'br' ? zlib.createBrotliDecompress() : null;
       if (dec) {
-        stream = inc.pipe(dec);
-        inc.on('error', (e) => dec.destroy(e));
+        // pipeline: se lo stream decompresso viene annullato/distrutto, distrugge anche inc (e il socket)
+        stream = pipeline(inc, dec, () => {});
         h.delete('content-encoding'); h.delete('content-length');
       }
       resolve(new Response(Readable.toWeb(stream), { status, statusText: inc.statusMessage, headers: h }));
     });
+    // timeout di inattività del socket (il `signal` del chiamante resta il tetto complessivo)
+    req.setTimeout(30_000, () => req.destroy(new Error('Timeout socket')));
     req.on('error', reject);
     req.end(init.body ?? undefined);
   });
@@ -175,6 +177,7 @@ export async function safeFetch(url, { maxRedirects = 5, ...init } = {}) {
       const loc = res.headers.get('location');
       if (!loc) return { res, finalUrl: current };
       current = new URL(loc, current).href;
+      try { await res.body?.cancel(); } catch {} // libera il socket prima di seguire il redirect
       continue;
     }
     return { res, finalUrl: current };
