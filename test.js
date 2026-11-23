@@ -20,6 +20,7 @@ import { deriveBrand, groupBySection, generateLlmsTxt } from './src/llmstxt.js';
 import { detectAiSignals, analyzeAiAct } from './src/aiact.js';
 import { deriveObligations, decideVerdict, assessAiAct, euEvidence, coverage, OBLIGATIONS, QUESTIONS, SHOW_IF } from './src/aiactAssess.js';
 import { QUESTION_TEXT, REQUIRED } from './web/app/aiact/questions.mjs';
+import { rigaCategoria } from './web/app/report/riga.mjs';
 import fs from 'node:fs';
 import { en } from './web/app/translations/en.js';
 import { de as UI_DE } from './web/app/translations/de.js';
@@ -1366,12 +1367,33 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
 // report/ui: ogni t('…') letterale di /report ha la voce nei 5 dizionari. La chiave è la
 // stringa italiana: senza voce, il sito inglese mostra l'italiano e nessun errore lo segnala.
 {
-  const src = fs.readFileSync('./web/app/report/page.jsx', 'utf8');
+  const src = ['./web/app/report/page.jsx', './web/app/report/riga.mjs'].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   const chiavi = [...src.matchAll(/\bt\(\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'"));
   ok(chiavi.length > 20, `report/ui: chiavi t() estratte (${chiavi.length})`);
   const diz = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
   const mancanti = Object.entries(diz).flatMap(([l, d]) => chiavi.filter((k) => !d[k]).map((k) => l + ': ' + k));
   ok(mancanti.length === 0, `report/ui: ogni t('…') tradotto in en de fr es pt (mancanti: ${mancanti.slice(0, 4).join(' | ')})`);
+  // le etichette di categoria passano da t(LABELS[k]): dinamiche, la regex sopra non le vede
+  for (const f of ['./web/app/report/page.jsx', './web/app/page.jsx']) {
+    const blocco = (fs.readFileSync(f, 'utf8').match(/const LABELS = \{([^}]*)\}/) || [])[1] || '';
+    const etichette = [...blocco.matchAll(/:\s*'((?:[^'\\]|\\.)*)'/g)].map((m) => m[1]);
+    ok(etichette.length === 6, `report/ui: ${f} ha 6 etichette LABELS (${etichette.length})`);
+    const senza = Object.entries(diz).flatMap(([l, d]) => etichette.filter((k) => !d[k]).map((k) => l + ': ' + k));
+    ok(senza.length === 0, `report/ui: etichette LABELS di ${f} tradotte (mancanti: ${senza.slice(0, 4).join(' | ')})`);
+  }
+}
+
+// report/riga: la riga sotto ogni categoria GEO deve spiegare il voto, anche quando a
+// toglierlo è un controllo informativo (off-site 60/100 con CCBot ok e sito fuori da Common Crawl)
+{
+  const id = (s) => s;
+  const offsite = rigaCategoria([{ name: 'CCBot', status: 'good' }, { name: 'Presenza in Common Crawl', status: 'info' }], id);
+  ok(offsite.includes('Presenza in Common Crawl'), `report/riga: off-site nomina il controllo informativo che pesa sul 60 («${offsite}»)`);
+  ok(offsite.startsWith('1/1 controlli ok'), `report/riga: conteggio solo sui non-informativi («${offsite}»)`);
+  const soloInfo = rigaCategoria([{ name: 'Non misurato', status: 'info' }], id);
+  ok(!soloInfo.includes('0/0') && soloInfo.includes('Non misurato'), `report/riga: categoria solo-info senza «0/0» e con il nome («${soloInfo}»)`);
+  const misto = rigaCategoria([{ name: 'A', status: 'good' }, { name: 'B', status: 'warn' }, { name: 'C', status: 'crit' }], id);
+  ok(misto === '1/3 controlli ok · B, C', `report/riga: problemi elencati dopo il conteggio («${misto}»)`);
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

@@ -107,6 +107,7 @@ export const pt = {
   "violazioni axe": "violações axe",
   "È diagnostico — mostra i problemi, non li corregge": "É diagnóstico — mostra os problemas, não os corrige",
   // /report: sezioni di dettaglio e switch mobile/computer
+  "Risposta pronta per le AI": "Resposta pronta para as IA",
   "aree": "áreas",
   "controlli": "controles",
   "controlli ok": "controles ok",

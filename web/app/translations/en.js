@@ -253,6 +253,7 @@ export const en = {
   "Usa tecniche subliminali o sfrutta vulnerabilità (età, disabilità, condizione economica)": "Uses subliminal techniques or exploits vulnerabilities (age, disability, economic situation)",
   "Prevede il rischio che una persona commetta un reato": "Predicts the risk of a person committing a crime",
   // /report: sezioni di dettaglio e switch mobile/computer
+  "Risposta pronta per le AI": "AI answer readiness",
   "aree": "areas",
   "controlli": "checks",
   "controlli ok": "checks ok",

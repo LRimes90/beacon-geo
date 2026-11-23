@@ -107,6 +107,7 @@ export const de = {
   "violazioni axe": "axe-Verstöße",
   "È diagnostico — mostra i problemi, non li corregge": "Es ist diagnostisch — zeigt die Probleme, behebt sie aber nicht",
   // /report: sezioni di dettaglio e switch mobile/computer
+  "Risposta pronta per le AI": "Antwortbereitschaft für KI",
   "aree": "Bereiche",
   "controlli": "Prüfungen",
   "controlli ok": "Prüfungen ok",

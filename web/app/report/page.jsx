@@ -3,6 +3,7 @@ import { useState } from 'react';
 import ToolNav from '../nav';
 import Turnstile from '../turnstile';
 import { useLang, Rich } from '../i18n';
+import { rigaCategoria } from './riga.mjs';
 
 const col = (s) => (s >= 80 ? 'var(--good)' : s >= 60 ? 'var(--warn)' : s >= 40 ? 'var(--mid)' : 'var(--crit)');
 const colPerf = (s) => (s >= 90 ? 'var(--good)' : s >= 50 ? 'var(--warn)' : 'var(--crit)');
@@ -64,12 +65,7 @@ function GeoDetail({ geo }) {
         {cats.map((k) => {
           const cat = geo.categories[k];
           const checks = cat.checks || [];
-          // gli informativi restano fuori dal conteggio: niente «0/0 ok» su categorie solo-info
-          const scored = checks.filter((x) => x.status !== 'info');
-          const nInfo = checks.length - scored.length;
-          const okN = scored.filter((x) => x.status === 'good').length;
-          const bad = scored.filter((x) => x.status !== 'good').map((x) => x.name).join(', ');
-          const riga = [scored.length ? `${okN}/${scored.length} ${t('controlli ok')}` : '', nInfo ? `${nInfo} ${t('informativi')}` : '', bad].filter(Boolean).join(' · ');
+          const riga = rigaCategoria(checks, t);
           const s = cat.unmeasured ? null : cat.score;
           return (
             <div className="cat" key={k}>
