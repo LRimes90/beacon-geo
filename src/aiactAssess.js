@@ -110,25 +110,28 @@ export function deriveObligations(answers = {}, signals = null) {
   const highRisk = asList(a.highRiskUse);
 
   const out = [];
-  const add = (id, why) => out.push({ id, ...OBLIGATIONS[id], why });
+  // `whyKey`/`whyDetail`: il testo lo traduce assessAiAct (come per `label`), così
+  // questa funzione resta pura e senza lingua.
+  const add = (id, whyKey, detail) => out.push({ id, ...OBLIGATIONS[id], whyKey, whyDetail: detail });
 
-  if (prohibited.length) add('art5', prohibited.join(', '));
-  else if (hasEmotionOnPage) add('art5', 'scan: ' + s.emotion.join(', '));
+  if (prohibited.length) add('art5', null, prohibited.join(', '));
+  else if (hasEmotionOnPage) add('art5', 'scan', s.emotion.join(', '));
 
-  if (usesAi || a.staffUsingAi) add('art4', 'uso di IA in nome dell’organizzazione');
+  if (usesAi || a.staffUsingAi) add('art4', 'art4');
 
   if (a.interaction || hasBotOnPage) {
-    add('art50_1', hasBotOnPage ? 'scan: ' + s.chatbots.join(', ') : 'dichiarato');
+    if (hasBotOnPage) add('art50_1', 'scan', s.chatbots.join(', '));
+    else add('art50_1', 'declared');
   }
-  if (isProvider && a.syntheticContent) add('art50_2', 'fornitore di sistema generativo');
-  if (a.deepfake) add('art50_4_deepfake', 'contenuti verosimili su persone/eventi reali');
-  if (a.syntheticContent && !a.editorialReview) add('art50_4_text', 'nessuna responsabilità editoriale dichiarata');
-  if (a.gpai) add('gpai', 'modello di uso generale');
+  if (isProvider && a.syntheticContent) add('art50_2', 'providerGen');
+  if (a.deepfake) add('art50_4_deepfake', 'deepfake');
+  if (a.syntheticContent && !a.editorialReview) add('art50_4_text', 'noEditorial');
+  if (a.gpai) add('gpai', 'gpai');
   if (highRisk.length) {
-    add(isProvider ? 'highRiskProvider' : 'highRiskDeployer', highRisk.join(', '));
+    add(isProvider ? 'highRiskProvider' : 'highRiskDeployer', null, highRisk.join(', '));
   }
   // Sempre: la protezione dati non dipende dall'AI Act.
-  if (usesAi) add('nldp', 'trattamento di dati personali tramite IA');
+  if (usesAi) add('nldp', 'nldp');
 
   return out;
 }
@@ -304,6 +307,8 @@ export function assessAiAct(answers = {}, signals = null, lang = 'it', today = n
         // detto che non è nell'ambito. La data resta in `from`, la UI la mostra.
         severity: outOfScope && (matured === 'due' || matured === 'future') && o.id !== 'nldp' ? 'conditional' : matured,
         label: t('aiact.ob.' + o.id),
+        // Con chiave: testo del catalogo; senza: elenco di id scelti dall'utente (art. 5, alto rischio).
+        why: o.whyKey ? t('aiact.why.' + o.whyKey, { detail: o.whyDetail }) : o.whyDetail,
       };
     })
     .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);

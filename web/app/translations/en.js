@@ -1,5 +1,15 @@
 // Dizionario en — chiave = stringa italiana.
 export const en = {
+  // ---- i18n: FEATURES home e AI Act ----
+  "robots.txt e blocchi lato server, più un fetch dal vivo che impersona 5 crawler AI: verifichiamo se ti raggiungono davvero, non solo cosa dichiari.": "robots.txt and server‑side blocks, plus a live fetch that impersonates 5 AI crawlers: we check whether they really reach you, not just what you declare.",
+  "File per agenti": "Files for agents",
+  "llms.txt, sitemap e i formati emergenti per gli agenti — skill.md, .well-known/mcp.json, WebMCP. Qui quasi nessuno è ancora pronto.": "llms.txt, sitemap and emerging formats for agents — skill.md, .well-known/mcp.json, WebMCP. Here almost nobody is ready yet.",
+  "title, meta description, JSON-LD Schema.org, canonical, hreflang, Open Graph e Twitter Card: i segnali che spiegano alle macchine chi sei.": "title, meta description, JSON-LD Schema.org, canonical, hreflang, Open Graph and Twitter Card: the signals that tell machines who you are.",
+  "Leggibilità macchina": "Machine readability",
+  "quanto testo vede una macchina nell'HTML servito, il peso della semantica, la gerarchia dei titoli e gli alt — con e senza JavaScript.": "how much text a machine sees in the served HTML, the weight of semantics, the hierarchy of headings and alt attributes — with and without JavaScript.",
+  "accesso a CCBot e presenza in Common Crawl, il dataset su cui molti modelli si sono addestrati.": "access to CCBot and presence in Common Crawl, the dataset on which many models have been trained.",
+  "TDMRep, licenze RSL e Content-Signal: cosa dichiari alle AI su uso e addestramento. Lo mostriamo, non lo pesiamo.": "TDMRep, RSL licenses and Content-Signal: what you declare to AI about use and training. We show it, we don’t weigh it.",
+  "HTTPS, indicizzabilità (meta robots noindex), viewport mobile e risposta del server: le basi che, se mancano, azzerano tutto il resto.": "HTTPS, indexability (meta robots noindex), mobile viewport and server response: the basics that, if missing, reset everything else.",
   "(nessun widget che patcha il DOM).": "(no widget patching the DOM).",
   "AI-readiness": "AI-readiness",
   "Accessibilità": "Accessibility",

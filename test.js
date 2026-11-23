@@ -1006,6 +1006,34 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     .flatMap((q) => [q.q, q.help, q.detail, ...(q.examples || []), ...Object.values(q.options || {})])
     .filter((s) => s && !en[s]);
   ok(missingEn.length === 0, `aiact/ui: traduzione en per ogni stringa del questionario (mancanti: ${missingEn.slice(0, 3).join(' | ')})`);
+  // Stesso controllo per de fr es pt (prima solo en): il questionario, i testi fissi della
+  // pagina AI Act e le descrizioni FEATURES della home devono avere voce in ogni lingua,
+  // diversa dall'italiano. Le stringhe fisse si leggono dal sorgente: un t('…') nuovo
+  // senza traduzione fa fallire il test invece di mostrare italiano sul sito tedesco.
+  {
+    const pagina = fs.readFileSync('./web/app/aiact/page.jsx', 'utf8') + fs.readFileSync('./web/app/page.jsx', 'utf8').split('function Gauge')[0];
+    const fisse = [...pagina.matchAll(/\bt\(\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")\s*\)/g)].map((m) => (m[1] ?? m[2]).replace(/\\'/g, "'"));
+    const features = [...pagina.matchAll(/\b[td]: '((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'"));
+    const tutte = [...new Set([...fisse, ...features, ...Object.values(QUESTION_TEXT).flatMap((q) => [q.q, q.help, q.detail, ...(q.examples || []), ...Object.values(q.options || {})])].filter(Boolean))];
+    ok(tutte.length > 120, `aiact+home/ui: stringhe estratte (${tutte.length})`);
+    const UI5 = { en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT };
+    for (const [l, d] of Object.entries(UI5)) {
+      const manca = tutte.filter((k) => !d[k]);
+      ok(manca.length === 0, `aiact+home/ui: ${l} traduce ogni stringa (mancanti: ${manca.length}, es. ${manca.slice(0, 2).join(' | ')})`);
+      const uguali = tutte.filter((k) => d[k] === k && k.length > 25);
+      ok(uguali.length === 0, `aiact+home/ui: ${l} senza testi lunghi copiati dall'italiano (${uguali.slice(0, 2).join(' | ')})`);
+    }
+    // Il perché di ogni obbligo (era fisso in italiano dentro deriveObligations) esce nella lingua richiesta.
+    const tutti = { role: 'both', interaction: true, syntheticContent: true, deepfake: true, editorialReview: false, gpai: true };
+    const whyIt = assessAiAct(tutti, null, 'it').obligations.map((o) => o.why);
+    ok(whyIt.length >= 6 && whyIt.every(Boolean), 'aiact/why: ogni obbligo ha un perché in it');
+    for (const l of ['en', 'de', 'fr', 'es', 'pt']) {
+      const w = assessAiAct(tutti, null, l).obligations.map((o) => o.why);
+      ok(w.every((x, i) => x && x !== whyIt[i]), `aiact/why: perché tradotto in ${l} (${w.find((x, i) => x === whyIt[i]) || 'tutti'})`);
+    }
+    const scanWhy = assessAiAct({ role: 'none' }, { chatbots: ['Tidio'] }, 'de').obligations.find((o) => o.id === 'art50_1').why;
+    ok(scanWhy.includes('Tidio') && !scanWhy.includes('scansione'), `aiact/why: dettaglio scan interpolato in de («${scanWhy}»)`);
+  }
   // Il verdetto deve essere calcolabile con le sole risposte obbligatorie.
   const minimal = assessAiAct(Object.fromEntries(REQUIRED.map((id) => [id, id === 'role' ? 'deployer' : 'yes'])), null, 'it');
   ok(minimal.verdict.title && minimal.obligations.length > 0, 'aiact/ui: le risposte obbligatorie bastano per un verdetto');

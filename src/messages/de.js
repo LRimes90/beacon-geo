@@ -335,4 +335,13 @@ export const de = {
   "aiact.ob.highRiskProvider": "Hohes Risiko (Anbieter): Risikomanagementsystem, Daten-Governance, Protokolle, Dokumentation, Konformitätsbewertung",
   "aiact.ob.highRiskDeployer": "Hohes Risiko (Betreiber): menschliche Aufsicht, Überwachung, Information der betroffenen Personen",
   "aiact.ob.nldp": "Datenschutz: Information, Rechtsgrundlage, automatisierte Entscheidungen — unabhängig von der KI-Verordnung geltend",
+  // ---- AI Act: perché di ogni obbligo (era fisso in italiano in deriveObligations) ----
+  "aiact.why.scan": "Scan: {detail}",
+  "aiact.why.art4": "Verwendung von KI im Namen der Organisation",
+  "aiact.why.declared": "deklariert",
+  "aiact.why.providerGen": "Anbieter von generativen Systemen",
+  "aiact.why.deepfake": "Realistische Inhalte über reale Personen/Veranstaltungen",
+  "aiact.why.noEditorial": "keine deklarierte redaktionelle Verantwortung",
+  "aiact.why.gpai": "KI-Modell mit allgemeinem Verwendungszweck",
+  "aiact.why.nldp": "Verarbeitung personenbezogener Daten durch KI",
 };
