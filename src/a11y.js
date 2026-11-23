@@ -1,6 +1,6 @@
 // src/a11y.js — modulo ACCESSIBILITÀ (companion, SEPARATO dallo score GEO).
 // Prodotto diverso, stesso motore: analizza l'HTML servito con analyzer propri.
-// Copre SOLO i criteri WCAG 2.1 verificabili staticamente dall'HTML servito.
+// Copre SOLO i criteri WCAG 2.2 verificabili staticamente dall'HTML servito.
 // NON è un audit di conformità: ~60% dei criteri (tastiera, focus order, senso
 // per screen reader) e il contrasto reale richiedono testing umano / rendering.
 // EAA (Dir. UE 2019/882) → EN 301 549 → WCAG 2.1 AA: qui i check "a colpo sicuro".

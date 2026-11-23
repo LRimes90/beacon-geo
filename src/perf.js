@@ -73,4 +73,10 @@ export async function auditPerf(rawUrl, { strategy = 'mobile', key, lang = 'it' 
     clearTimeout(t);
   }
 }
+// Mobile + desktop in parallelo: la misura mobile con quella desktop nel campo `desktop`.
+// Serve a /perf, dove il token Turnstile è monouso e quindi basta UNA richiesta per le due.
+export async function auditPerfPair(rawUrl, opts = {}) {
+  const [m, d] = await Promise.all([auditPerf(rawUrl, { ...opts, strategy: 'mobile' }), auditPerf(rawUrl, { ...opts, strategy: 'desktop' })]);
+  return { ...m, desktop: d };
+}
 export const PERF_LABEL = 'Performance';

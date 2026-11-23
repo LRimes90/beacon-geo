@@ -1709,4 +1709,61 @@ ok(jsonLdCount('<script>var s="<script type=\'application/ld+json\'>{}"</script>
   } finally { raw.close(); }
 }
 
+// switch Dispositivo condiviso: /report lo etichetta «Performance:», /perf lo usa con UNA richiesta
+{
+  const sw = fs.existsSync('./web/app/device-switch.jsx') ? fs.readFileSync('./web/app/device-switch.jsx', 'utf8') : '';
+  ok(sw.includes('aria-pressed') && sw.includes("t('Dispositivi mobili')") && sw.includes("t('Computer')"), 'device-switch: componente condiviso con aria-pressed');
+  const rep = fs.readFileSync('./web/app/report/page.jsx', 'utf8');
+  ok(rep.includes('<DeviceSwitch label="Performance:"') && !rep.includes('aria-pressed'), 'report: switch condiviso etichettato «Performance:»');
+  const perf = fs.readFileSync('./web/app/perf/page.jsx', 'utf8');
+  ok(perf.includes('<DeviceSwitch') && perf.includes('desktop: true') && !perf.includes('Analizza come desktop'), 'perf: switch mobile/desktop al posto della casella');
+  const route = fs.readFileSync('./web/app/api/perf/route.js', 'utf8');
+  ok(route.includes('auditPerfPair') && route.includes('desktop === true'), 'api/perf: desktop:true misura le due strategie');
+  for (const [l, d] of Object.entries({ en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT })) {
+    ok(!('Analizza come desktop (default: mobile)' in d), `i18n ${l}: chiave morta della casella desktop rimossa`);
+    ok(d['dati reali utenti:'], `i18n ${l}: «dati reali utenti:» tradotto`);
+  }
+}
+
+// auditPerfPair: mobile + desktop in parallelo (il token Turnstile è monouso: una richiesta, due misure)
+{
+  const { auditPerfPair } = await import('./src/perf.js');
+  ok(typeof auditPerfPair === 'function', 'perf: auditPerfPair esportata');
+  const realFetch = globalThis.fetch;
+  const psi = [];
+  globalThis.fetch = async (u) => {
+    if (String(u).includes('pagespeedonline')) psi.push(new URL(u).searchParams.get('strategy'));
+    throw new Error('rete spenta nel test');
+  };
+  try {
+    const r = await auditPerfPair('https://example.com/', { lang: 'it' });
+    ok(psi.sort().join(',') === 'desktop,mobile', `perf: coppia = due chiamate PSI (${psi.join(',')})`);
+    ok(r.strategy === 'mobile' && r.desktop && r.desktop.strategy === 'desktop', 'perf: risposta mobile con campo desktop');
+  } finally { globalThis.fetch = realFetch; }
+}
+
+// WCAG 2.2 su /a11y e /report; disclaimer con il dato Deque e la fonte
+{
+  ok(fs.readFileSync('./src/render.js', 'utf8').includes("'wcag22aa'"), 'axe: runOnly include wcag22aa (target-size, 2.5.8)');
+  for (const f of ['./web/app/a11y/page.jsx', './web/app/report/page.jsx']) ok(!fs.readFileSync(f, 'utf8').includes('WCAG 2.1'), `${f}: niente WCAG 2.1 residuo`);
+  const a11y = fs.readFileSync('./web/app/a11y/page.jsx', 'utf8');
+  ok(a11y.includes('https://www.deque.com/blog/automated-testing-study-identifies-57-percent-of-digital-accessibility-issues/'), 'a11y: disclaimer cita la fonte Deque');
+  ok(!a11y.includes('~metà dei criteri') && !a11y.includes('~50% dei criteri'), 'a11y: niente stima sbagliata sui criteri');
+  const nuove = [
+    'Analisi approfondita con axe-core (pagina renderizzata: contrasto reale, ARIA, dimensione dei target)',
+    'Anche con axe-core i test automatici trovano poco più della metà dei problemi reali: il 57% in uno studio su oltre 2.000 audit',
+    'Da verificare a mano:',
+    'navigazione completa con la sola tastiera (Tab, Invio, Esc)',
+    'ordine logico del focus, sempre visibile',
+    'lettura con uno screen reader (NVDA, VoiceOver)',
+    'zoom al 200% senza perdere contenuti',
+    "testi alternativi che descrivono davvero l'immagine",
+  ];
+  for (const k of nuove) ok(a11y.includes(k.replace(/'/g, "\\'")) || a11y.includes(k), `a11y: usa «${k.slice(0, 40)}…»`);
+  for (const [l, d] of Object.entries({ en, de: UI_DE, fr: UI_FR, es: UI_ES, pt: UI_PT })) {
+    for (const k of nuove) ok(d[k], `i18n ${l}: «${k.slice(0, 40)}…» tradotta`);
+    ok(!Object.keys(d).some((k) => k.includes('WCAG 2.1')), `i18n ${l}: nessuna chiave WCAG 2.1 residua`);
+  }
+}
+
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);

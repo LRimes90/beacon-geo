@@ -4,6 +4,7 @@ import ToolNav from '../nav';
 import Turnstile from '../turnstile';
 import { useLang, Rich } from '../i18n';
 import { LABELS, col, pin, fixesOf, CategoriaGeo, DaSistemare } from '../geo-dettaglio';
+import DeviceSwitch from '../device-switch';
 
 const colPerf = (s) => (s >= 90 ? 'var(--good)' : s >= 50 ? 'var(--warn)' : 'var(--crit)');
 
@@ -55,8 +56,8 @@ function A11yDetail({ a11y }) {
   const { t } = useLang();
   const { score, checks = [] } = a11y.result;
   return (
-    <Detail title={t('Accessibilità')} info={`${checks.length} ${t('controlli WCAG 2.1 · statici')}`} score={score} c={col(score)} verdict={verdetto(t, score)}
-      desc={t('Controlli WCAG 2.1 sull\'HTML servito: lingua, titoli, testi alternativi, etichette dei form, zoom, contrasto.')}
+    <Detail title={t('Accessibilità')} info={`${checks.length} ${t('controlli WCAG 2.2 · statici')}`} score={score} c={col(score)} verdict={verdetto(t, score)}
+      desc={t('Controlli WCAG 2.2 sull\'HTML servito: lingua, titoli, testi alternativi, etichette dei form, zoom, contrasto.')}
       fixes={fixesOf(checks)}>
       <ul style={{ gridTemplateColumns: GRID, gap: '9px 22px', marginTop: 14 }}>
         {checks.map((c, i) => {
@@ -173,13 +174,7 @@ export default function Report() {
 
         {res && (
           <section className="result">
-            {/* aria-pressed e non role="tab": cambia solo la Performance, non è un pannello a schede */}
-            <div role="group" aria-label={t('Dispositivo')} style={{ display: 'inline-flex', gap: 4, padding: 4, marginBottom: 12, border: '1px solid var(--card-line)', borderRadius: 999 }}>
-              {[['mobile', t('Dispositivi mobili')], ['desktop', t('Computer')]].map(([k, lab]) => (
-                <button key={k} type="button" aria-pressed={device === k} onClick={() => setDevice(k)}
-                  style={{ border: 0, borderRadius: 999, padding: '7px 14px', cursor: 'pointer', font: '600 13px var(--mono)', background: device === k ? 'var(--beam)' : 'transparent', color: device === k ? '#062018' : 'var(--muted)' }}>{lab}</button>
-              ))}
-            </div>
+            <DeviceSwitch label="Performance:" device={device} onChange={setDevice} />
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <Card label="GEO / AI" score={geoScore} sub={geoScore == null ? t('n/d') : 'AI-readiness'} c={col(geoScore || 0)} />
               <Card label={t('Accessibilità')} score={a11yScore} sub={axeV == null ? t('solo statico') : axeV + ' ' + t('violazioni axe')} c={col(a11yScore || 0)} />
