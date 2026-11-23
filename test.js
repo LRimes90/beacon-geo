@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
-import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
+import { assertSafeUrl, isBlockedIp, SsrfError, makeSafeLookup, pinnedFetch, safeFetch, __setResolverForTests } from './src/ssrf-guard.js';
+import http from 'node:http';
+import zlib from 'node:zlib';
 import { summarizePsi } from './src/perf.js';
 import { generateStatement } from './src/statement.js';
 import { remedyFor, REMEDIATION } from './src/remediation.js';
@@ -1439,6 +1441,54 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     const m = await auditAll('http://127.0.0.1/', { desktop: true });
     ok(psi.sort().join(',') === 'desktop,mobile' && m.perfDesktop && m.perfDesktop.strategy === 'desktop', `suite: mobile + desktop in parallelo (${psi.join(',')})`);
   } finally { globalThis.fetch = realFetch; }
+}
+
+// anti-DNS-rebinding: lookup dentro la connessione + pinnedFetch (offline, resolver finto)
+{
+  const cbLookup = (look, host, opts) => new Promise((res) => look(host, opts, (e, a, f) => res({ e, a, f })));
+  const fake = (addrs) => makeSafeLookup(async () => addrs);
+  for (const [name, addr, fam] of [['127.0.0.1', '127.0.0.1', 4], ['::1', '::1', 6], ['metadata', '169.254.169.254', 4]]) {
+    const r = await cbLookup(fake([{ address: addr, family: fam }]), 'x.test', {});
+    ok(r.e instanceof SsrfError && r.e.code === 'ssrf.resolvesInternal', `rebind: lookup blocca ${name}`);
+  }
+  const mix = await cbLookup(fake([{ address: '8.8.8.8', family: 4 }, { address: '10.0.0.1', family: 4 }]), 'x.test', { all: true });
+  ok(mix.e instanceof SsrfError && mix.e.code === 'ssrf.resolvesInternal', 'rebind: misto pubblico+privato bloccato');
+  const pub = await cbLookup(fake([{ address: '8.8.8.8', family: 4 }]), 'x.test', {});
+  ok(!pub.e && pub.a === '8.8.8.8' && pub.f === 4, 'rebind: IP pubblico passa (firma senza all)');
+  const pubAll = await cbLookup(fake([{ address: '8.8.8.8', family: 4 }]), 'x.test', { all: true });
+  ok(!pubAll.e && pubAll.a.length === 1 && pubAll.a[0].address === '8.8.8.8', 'rebind: IP pubblico passa (firma con all)');
+
+  let hits = 0;
+  const srv = http.createServer((req, res) => {
+    hits++;
+    if (req.url === '/gz') { res.writeHead(200, { 'content-encoding': 'gzip', 'set-cookie': ['a=1', 'b=2'], 'content-type': 'text/plain' }); res.end(zlib.gzipSync('ciao gzip')); }
+    else if (req.url === '/204') { res.writeHead(204); res.end(); }
+    else if (req.url === '/301') { res.writeHead(301, { location: '/dest' }); res.end(); }
+    else { res.end('ok'); }
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const port = srv.address().port;
+  // lookup di test: nessun guard, punta sempre a 127.0.0.1
+  const open = (h, o, cb) => (o.all ? cb(null, [{ address: '127.0.0.1', family: 4 }]) : cb(null, '127.0.0.1', 4));
+  try {
+    // simulazione rebinding: 1ª risoluzione pubblica (controllo), poi 127.0.0.1 (connessione)
+    let calls = 0;
+    __setResolverForTests(async () => (++calls === 1 ? [{ address: '8.8.8.8', family: 4 }] : [{ address: '127.0.0.1', family: 4 }]));
+    let err;
+    try { await safeFetch(`http://rebind.test:${port}/`); } catch (e) { err = e; }
+    ok(err instanceof SsrfError && err.code === 'ssrf.resolvesInternal', 'rebind: safeFetch lancia SsrfError al rebinding');
+    ok(hits === 0 && calls === 2, `rebind: il server riceve 0 connessioni (hits=${hits}, risoluzioni=${calls})`);
+    __setResolverForTests();
+
+    // conversione risposta, senza guard
+    const g = await pinnedFetch(`http://x.test:${port}/gz`, { _lookup: open });
+    ok(g.status === 200 && (await g.text()) === 'ciao gzip', 'pinnedFetch: corpo gzip decompresso');
+    ok(g.headers.getSetCookie().length === 2 && !g.headers.has('content-encoding'), 'pinnedFetch: header multipli preservati');
+    const n = await pinnedFetch(`http://x.test:${port}/204`, { _lookup: open });
+    ok(n.status === 204 && n.body === null, 'pinnedFetch: 204 con corpo null');
+    const m = await pinnedFetch(`http://x.test:${port}/301`, { redirect: 'manual', _lookup: open });
+    ok(m.status === 301 && m.headers.get('location') === '/dest', 'pinnedFetch: 301 con Location leggibile, nessun redirect seguito');
+  } finally { __setResolverForTests(); srv.close(); }
 }
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);
