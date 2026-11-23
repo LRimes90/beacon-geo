@@ -136,7 +136,13 @@ export function pinnedFetch(url, init = {}) {
     if (!headers['accept-encoding']) headers['accept-encoding'] = 'gzip, deflate, br';
     const mod = u.protocol === 'https:' ? https : http;
     const method = (init.method || 'GET').toUpperCase();
+    // Il callback gira in un evento di node:http: un'eccezione qui (Response/Headers su dati
+    // ostili del sito scansionato) sarebbe NON catturata e farebbe cadere il processo per tutti.
     const req = mod.request(u, { method, headers, lookup: init._lookup || makeSafeLookup(), signal: init.signal }, (inc) => {
+      try { onResponse(inc); } catch (e) { inc.destroy(); reject(e); }
+    });
+    // statusText omesso: nessun consumatore, e un reason phrase ostile fa lanciare Response.
+    const onResponse = (inc) => {
       const status = inc.statusCode;
       if (status < 200 || status > 599) { inc.resume(); return reject(new Error('Status HTTP non gestito: ' + status)); }
       const h = new Headers();
@@ -145,7 +151,7 @@ export function pinnedFetch(url, init = {}) {
       }
       if (method === 'HEAD' || NULL_BODY.has(status)) {
         inc.resume();
-        return resolve(new Response(null, { status, statusText: inc.statusMessage, headers: h }));
+        return resolve(new Response(null, { status, headers: h }));
       }
       const enc = String(inc.headers['content-encoding'] || '').toLowerCase().trim();
       let stream = inc;
@@ -157,8 +163,8 @@ export function pinnedFetch(url, init = {}) {
         stream = pipeline(inc, dec, () => {});
         h.delete('content-encoding'); h.delete('content-length');
       }
-      resolve(new Response(Readable.toWeb(stream), { status, statusText: inc.statusMessage, headers: h }));
-    });
+      resolve(new Response(Readable.toWeb(stream), { status, headers: h }));
+    };
     // timeout di inattività del socket (il `signal` del chiamante resta il tetto complessivo)
     req.setTimeout(30_000, () => req.destroy(new Error('Timeout socket')));
     req.on('error', reject);

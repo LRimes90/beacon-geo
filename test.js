@@ -1500,5 +1500,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     ok(m.status === 301 && m.headers.get('location') === '/dest', 'pinnedFetch: 301 con Location leggibile, nessun redirect seguito');
   } finally { __setResolverForTests(); srv.close(); }
 }
+{
+  // Status line ostile (carattere di controllo nel reason phrase): il sito scansionato NON deve
+  // poter far cadere il processo con un'eccezione non catturata nel callback 'response'.
+  const net = await import('node:net');
+  const raw = net.createServer((s) => s.once('data', () => s.end('HTTP/1.1 200 O\x01K\r\nContent-Length: 2\r\n\r\nhi')));
+  await new Promise((r) => raw.listen(0, '127.0.0.1', r));
+  const loop = (h, o, cb) => { if (typeof o === 'function') { cb = o; o = {}; } o.all ? cb(null, [{ address: '127.0.0.1', family: 4 }]) : cb(null, '127.0.0.1', 4); };
+  try {
+    const r = await pinnedFetch(`http://x.test:${raw.address().port}/`, { _lookup: loop }).catch(() => null);
+    ok(r === null || (r.status === 200 && (await r.text()) === 'hi'), 'pinnedFetch: status text ostile gestito, nessun crash del processo');
+  } finally { raw.close(); }
+}
 
 console.log(`\x1b[32m✓ ${n} assert passati\x1b[0m`);
