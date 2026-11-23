@@ -5,18 +5,14 @@
 // Riferimenti: Google Search Central (robots meta/X-Robots-Tag, canonical, hreflang,
 // dati strutturati), skill schema (proprietà obbligatorie), RFC 6797 (HSTS).
 import { makeT } from './messages/index.js';
-import { getMeta, contentHtml, parseRobots } from './lib.js';
+import { getMeta, contentHtml, parseRobots, parseAttrs, jsonLdBlocks } from './lib.js';
 
 // Attributi di ogni <tag> trovato (nomi in minuscolo). Usa contentHtml: via commenti/script.
 function tagAttrs(html, tag) {
   const out = [];
   // Regex lineari su HTML ostile (limite 3 MB): [^<>] ferma ogni tentativo al tag successivo,
   // il lookbehind fa partire il nome solo a inizio parola. Senza, costo quadratico (ReDoS).
-  for (const m of contentHtml(html).matchAll(new RegExp('<' + tag + '\\b([^<>]*)>', 'gi'))) {
-    const a = {};
-    for (const x of m[1].matchAll(/(?<![a-zA-Z:-])([a-zA-Z:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)) a[x[1].toLowerCase()] = x[2] ?? x[3] ?? x[4] ?? '';
-    out.push(a);
-  }
+  for (const m of contentHtml(html).matchAll(new RegExp('<' + tag + '\\b([^<>]*)>', 'gi'))) out.push(parseAttrs(m[1]));
   return out;
 }
 export const linksByRel = (html, rel) =>
@@ -119,13 +115,12 @@ export const REQUIRED_PROPS = {
   LocalBusiness: ['name', 'address'], Event: ['name', 'startDate', 'location'],
 };
 export function jsonLdState(html) {
-  const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let bad = 0, count = 0, m;
+  let bad = 0, count = 0;
   const problems = [], types = new Set();
-  while ((m = re.exec(html))) {
+  for (const raw of jsonLdBlocks(html)) {
     count++;
     let data;
-    try { data = JSON.parse(m[1].trim()); } catch { bad++; continue; }
+    try { data = JSON.parse(raw.trim()); } catch { bad++; continue; }
     const nodes = [].concat(data).flatMap((r) => (r && Array.isArray(r['@graph']) ? r['@graph'] : [r]));
     for (const n of nodes) {
       if (!n || typeof n !== 'object') continue;

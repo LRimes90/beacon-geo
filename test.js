@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords, traceRedirects } from './src/lib.js';
+import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, jsonLdCount, contentHtml, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords, traceRedirects } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp, SsrfError, makeSafeLookup, pinnedFetch, safeFetch, __setResolverForTests } from './src/ssrf-guard.js';
@@ -86,6 +86,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
     getMeta(h, 'description');
     ok(Date.now() - t0 < 1000, 'getMeta lineare su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
   }
+  // Stesso rischio per contentHtml (usata da quasi ogni analisi) e per i blocchi JSON-LD:
+  // [\s\S]*? senza chiusura ripartiva da capo a ogni apertura (1 MB = minuti, o peggio).
+  for (const [k, h] of [['<!-- aperti', '<!--'.repeat(250_000)], ['<script aperti', '<script'.repeat(140_000)], ['<style aperti', '<style'.repeat(160_000)], ['ld+json senza >', '<script type="application/ld+json"'.repeat(30_000)], ['ld+json senza chiusura', '<script type="application/ld+json">'.repeat(28_000)]]) {
+    const t0 = Date.now();
+    contentHtml(h); jsonLdTypes(h); jsonLdCount(h);
+    ok(Date.now() - t0 < 1000, 'contentHtml e JSON-LD lineari su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
+  }
+  ok(contentHtml('a<!-- x -->b<SCRIPT>y</script>c<style>z</STYLE>d<noscript>n</noscript>e') === 'a b c d e', 'contentHtml: blocchi nascosti tolti, maiuscole comprese');
+  ok(contentHtml('a<!-- x') === 'a<!-- x', 'contentHtml: blocco senza chiusura lasciato com\'era');
+  ok(jsonLdCount('<script type="application/ld+json">{}</script><script>var s="<script type=\'x\'>"</script><script type=\'application/ld+json\'>[]</script>') === 2, 'jsonLdCount: due blocchi, virgolette singole comprese');
+ok(jsonLdCount('<script>var s="<script type=\'application/ld+json\'>{}"</script>') === 0, 'jsonLdCount: un tag ld+json dentro una stringa JS non è un blocco');
   ok(jsonLdTypes(html).includes('Organization'), 'tipo JSON-LD rilevato');
   ok(semanticRatio(html).semantic === 2, 'tag semantici contati (header+main)');
   ok(imgAlt(html).total === 2 && imgAlt(html).withAlt === 1, 'alt immagini contate');
@@ -427,7 +438,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(base.score === 100 && base.checks.length > 4, 'seo: punteggio tech invariato, check accodati');
   ok(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true }).checks.length === 4, 'seo: senza input i check restano 4');
   // ReDoS su HTML ostile da ~1 MB: tutti i controlli B1-B4 insieme restano sotto il secondo.
-  for (const [k, h] of [['tag link lungo', '<link ' + 'a'.repeat(1_000_000)], ['<link ripetuto', '<link'.repeat(200_000)], ['<meta ripetuto', '<meta'.repeat(200_000)]]) {
+  for (const [k, h] of [['tag link lungo', '<link ' + 'a'.repeat(1_000_000)], ['<link ripetuto', '<link'.repeat(200_000)], ['<meta ripetuto', '<meta'.repeat(200_000)], ['<!-- aperti', '<!--'.repeat(250_000)], ['ld+json senza >', '<script type="application/ld+json"'.repeat(30_000)], ['ld+json senza chiusura', '<script type="application/ld+json">'.repeat(28_000)]]) {
     const t0 = Date.now();
     seo({ html: h });
     ok(Date.now() - t0 < 1000, 'seo: lineare su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');

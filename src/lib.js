@@ -153,25 +153,45 @@ export function getMeta(html, name) {
   // [^>]+ ... [\s\S]*? era quadratica: 200 KB di "<meta" ripetuto = 15 s di processo bloccato.
   const want = name.toLowerCase();
   for (const m of html.matchAll(/<meta\b((?:[^<>"']|"[^"]*"|'[^']*')*)>/gi)) {
-    const a = {};
-    for (const x of m[1].matchAll(/(?<![a-zA-Z:-])([a-zA-Z:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)) {
-      const k = x[1].toLowerCase();
-      if (!(k in a)) a[k] = x[2] ?? x[3] ?? x[4] ?? '';
-    }
+    const a = parseAttrs(m[1]);
     if (a.content !== undefined && [a.name, a.property].some((v) => (v || '').toLowerCase() === want)) return a.content;
   }
   return null;
 }
+// Attributi di un tag (il testo tra nome e ">"): nomi in minuscolo, a parità di nome vince il
+// primo, come nel browser. Il lookbehind fa partire il nome solo a inizio parola (lineare).
+export function parseAttrs(s) {
+  const a = {};
+  for (const x of s.matchAll(/(?<![a-zA-Z:-])([a-zA-Z:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)) {
+    const k = x[1].toLowerCase();
+    if (!(k in a)) a[k] = x[2] ?? x[3] ?? x[4] ?? '';
+  }
+  return a;
+}
 export function has(html, re) { return re.test(html); }
 export function count(html, re) { const m = html.match(re); return m ? m.length : 0; }
 
+// Contenuto grezzo dei blocchi <script type="application/ld+json">. Lineare su HTML ostile:
+// tag letto con i valori tra virgolette, chiusura cercata una volta sola per blocco. La vecchia
+// regex [^>]+ ... [\s\S]*? era cubica: 8 KB di aperture senza ">" = 86 ms, 1 MB = ore.
+export function jsonLdBlocks(html) {
+  const s = String(html || ''), out = [];
+  const open = /<script\b((?:[^<>"']|"[^"]*"|'[^']*')*)>/gi, close = /<\/script>/gi;
+  let m;
+  while ((m = open.exec(s))) {
+    close.lastIndex = open.lastIndex;
+    const c = close.exec(s);
+    if (!c) break; // nessuna chiusura più avanti: vale anche per i blocchi successivi
+    if ((parseAttrs(m[1]).type || '').trim().toLowerCase() === 'application/ld+json') out.push(s.slice(open.lastIndex, c.index));
+    open.lastIndex = close.lastIndex; // il contenuto di uno script non contiene tag veri: si salta
+  }
+  return out;
+}
 export function jsonLdTypes(html) {
   const types = new Set();
-  const re = /<script[^>]+type=["\']application\/ld\+json["\'][^>]*>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = re.exec(html))) {
+  for (const raw of jsonLdBlocks(html)) {
     try {
-      const data = JSON.parse(m[1].trim());
+      const data = JSON.parse(raw.trim());
       const walk = (o) => {
         if (!o || typeof o !== 'object') return;
         if (o['@type']) [].concat(o['@type']).forEach((t) => types.add(String(t)));
@@ -183,18 +203,29 @@ export function jsonLdTypes(html) {
   return [...types];
 }
 export function jsonLdCount(html) {
-  return count(html, /<script[^>]+type=["\']application\/ld\+json["\']/gi);
+  return jsonLdBlocks(html).length;
 }
 // Commenti, <style>, <script>, <template> e <noscript> contengono stringhe che *sembrano*
 // tag ma non esistono nel DOM: un "<h1" dentro un commento CSS faceva contare 2 H1 su
 // canmedticino.ch (falso positivo "H1 duplicato"). Da ripulire prima di ogni conteggio.
+// Lineare: ogni apertura cerca la sua chiusura una volta sola. Le vecchie replace con
+// [\s\S]*? ripartivano da capo a ogni apertura senza chiusura: 1 MB di "<!--" = 86 s.
+const HIDDEN = [[/<!--/g, /-->/g], [/<script\b/gi, /<\/script>/gi], [/<style\b/gi, /<\/style>/gi],
+  [/<template\b/gi, /<\/template>/gi], [/<noscript\b/gi, /<\/noscript>/gi]];
+function cutBlocks(s, open, close) {
+  let out = '', pos = 0, m;
+  open.lastIndex = 0;
+  while ((m = open.exec(s))) {
+    close.lastIndex = m.index + m[0].length;
+    const c = close.exec(s);
+    if (!c) break; // nessuna chiusura più avanti: resta tutto com'è, come faceva la regex
+    out += s.slice(pos, m.index) + ' ';
+    pos = open.lastIndex = c.index + c[0].length;
+  }
+  return out + s.slice(pos);
+}
 export function contentHtml(html) {
-  return String(html || '')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<template\b[\s\S]*?<\/template>/gi, ' ')
-    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ');
+  return HIDDEN.reduce((s, [open, close]) => cutBlocks(s, open, close), String(html || ''));
 }
 
 // Denominatore del rapporto semantico: solo il <body>. I tag di <head> (meta, link, title)
