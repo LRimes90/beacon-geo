@@ -1,7 +1,7 @@
 // test.js — check runnabile sulle funzioni pure (assert, niente framework).
 // node test.js  →  esce !=0 se qualcosa si rompe.
 import assert from 'node:assert/strict';
-import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords } from './src/lib.js';
+import { AI_CRAWLERS, LIVE_UA, TRAINING_CRAWLERS, RETRIEVAL_CRAWLERS, parseRobots, getTitle, getMeta, jsonLdTypes, semanticRatio, wordCount, imgAlt, headings, links, normUrl, fetchText, stripTags, htmlLang, sections, extractableBlocks, paragraphWords, citableEvidence, contentWords, traceRedirects } from './src/lib.js';
 import { analyzeStructured, analyzeReadability, analyzeAccess, analyzeAgentFiles, analyzeOffsite, analyzeRights, analyzeTech, analyzeAnswerability, analyzeAgentReady, parseContentUsage, detectWebmcp, isQuestionHeading, pageLang, CATEGORY_LABELS } from './src/analyzers.js';
 import { analyzeA11y, summarizeAxe, accessibleFormLabels } from './src/a11y.js';
 import { assertSafeUrl, isBlockedIp } from './src/ssrf-guard.js';
@@ -73,6 +73,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   ok(getMeta(`<meta name="description" content="Informativa dell'Associazione: dati e finalita.">`, 'description')
        === "Informativa dell'Associazione: dati e finalita.",
      'apostrofo dentro content non tronca la description');
+  ok(getMeta(`<meta content='a "b" c' property="og:title">`, 'og:title') === 'a "b" c', 'getMeta: content prima di property, virgolette miste');
+  ok(getMeta('<META NAME="Description" CONTENT="Prezzi > 10 euro">', 'description') === 'Prezzi > 10 euro', 'getMeta: maiuscole e > dentro il valore');
+  ok(getMeta('<meta data-name="description" content="no"><meta name="description" content="si">', 'description') === 'si', 'getMeta: data-name non conta come name');
+  ok(getMeta('<meta property="og:image:alt" content="alt"><meta property="og:image" content="img">', 'og:image') === 'img', 'getMeta: og:image non pesca og:image:alt');
+  // ReDoS: l'HTML lo sceglie chi lancia la scansione (fino a 3 MB). La vecchia regex impiegava
+  // ~15 s su 200 KB di "<meta" ripetuto, bloccando l'unico processo Node per tutti.
+  for (const [k, h] of [['<meta ripetuto', '<meta'.repeat(200_000)], ['virgolette aperte', '<meta "'.repeat(150_000)], ['tag lungo', '<meta ' + 'a '.repeat(500_000)]]) {
+    const t0 = Date.now();
+    getMeta(h, 'description');
+    ok(Date.now() - t0 < 1000, 'getMeta lineare su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
+  }
   ok(jsonLdTypes(html).includes('Organization'), 'tipo JSON-LD rilevato');
   ok(semanticRatio(html).semantic === 2, 'tag semantici contati (header+main)');
   ok(imgAlt(html).total === 2 && imgAlt(html).withAlt === 1, 'alt immagini contate');
@@ -405,6 +416,77 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   const bad = analyzeTech({ https: false, noindex: true, viewport: false, statusOk: false });
   ok(bad.score === 0, 'tech: tutto problematico = 0');
   ok(bad.checks.find((c) => c.name.startsWith('Indicizz')).status === 'crit', 'tech: noindex è critico');
+}
+{
+  // B1-B4: controlli SEO tecnici (src/seoTech.js), offline con HTML e header di fixture.
+  const seo = (o) => analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true, seo: { robotsOk: true, robotsTxt: 'User-agent: *\nDisallow:\nSitemap: https://e.it/s.xml', finalUrl: 'https://e.it/p', html: '', headers: null, probes: null, ...o } });
+  const by = (r, s) => r.checks.find((c) => c.name.startsWith(s));
+  const base = seo({});
+  ok(base.score === 100 && base.checks.length > 4, 'seo: punteggio tech invariato, check accodati');
+  ok(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true }).checks.length === 4, 'seo: senza input i check restano 4');
+  // ReDoS su HTML ostile da ~1 MB: tutti i controlli B1-B4 insieme restano sotto il secondo.
+  for (const [k, h] of [['tag link lungo', '<link ' + 'a'.repeat(1_000_000)], ['<link ripetuto', '<link'.repeat(200_000)], ['<meta ripetuto', '<meta'.repeat(200_000)]]) {
+    const t0 = Date.now();
+    seo({ html: h });
+    ok(Date.now() - t0 < 1000, 'seo: lineare su HTML ostile (' + k + '): ' + (Date.now() - t0) + ' ms');
+  }
+  // B1
+  ok(by(seo({ headers: { 'X-Robots-Tag': 'noindex, nofollow' } }), 'Direttive').status === 'crit', 'seo B1: X-Robots-Tag noindex = crit');
+  ok(by(seo({ headers: { 'X-Robots-Tag': 'otherbot: noindex' } }), 'Direttive').status === 'good', 'seo B1: noindex per altro bot ignorato');
+  ok(by(seo({ html: '<meta name="robots" content="index, nofollow">' }), 'Direttive').status === 'warn', 'seo B1: meta nofollow = warn');
+  ok(by(seo({ robotsTxt: 'User-agent: *\nDisallow: /' }), 'robots.txt: blocchi').status === 'crit', 'seo B1: Disallow / = crit');
+  ok(by(seo({ robotsTxt: 'User-agent: Googlebot\nDisallow: /\n\nUser-agent: *\nDisallow:' }), 'robots.txt: blocchi').status === 'crit', 'seo B1: Googlebot bloccato = crit');
+  ok(by(seo({ robotsTxt: 'User-agent: *\nDisallow: /admin' }), 'Riga Sitemap').status === 'warn', 'seo B1: Sitemap assente = warn');
+  ok(by(seo({}), 'Riga Sitemap').status === 'good' && by(seo({}), 'robots.txt: blocchi').status === 'good', 'seo B1: robots sano = good');
+  // B2
+  const can = (h, u) => by(seo({ html: h, finalUrl: u || 'https://e.it/p' }), 'Canonical').status;
+  ok(can('<link rel="canonical" href="https://e.it/p/">') === 'good', 'seo B2: canonical coerente (slash finale ignorato)');
+  ok(can('') === 'warn' && can('<link rel="canonical" href="/p">') === 'warn', 'seo B2: assente o relativo = warn');
+  ok(can('<link rel="canonical" href="https://e.it/a"><link rel="canonical" href="https://e.it/b">') === 'warn', 'seo B2: doppio canonical = warn');
+  ok(can('<link rel="canonical" href="https://altro.it/p">') === 'warn' && can('<link rel="canonical" href="https://e.it/altra">') === 'warn', 'seo B2: canonical altrove = warn');
+  const hl = (h) => by(seo({ html: h }), 'Hreflang');
+  ok(!hl('<html></html>'), 'seo B2: senza hreflang il check non compare');
+  ok(hl('<link rel="alternate" hreflang="it" href="https://e.it/p"><link rel="alternate" hreflang="en" href="https://e.it/en/p"><link rel="alternate" hreflang="x-default" href="https://e.it/p">').status === 'good', 'seo B2: hreflang completo = good');
+  const hbad = hl('<link rel="alternate" hreflang="italiano" href="https://e.it/x"><link rel="alternate" hreflang="en" href="https://e.it/en/p">');
+  ok(hbad.status === 'warn' && /italiano/.test(hbad.detail) && /x-default/.test(hbad.detail), 'seo B2: codice non valido, niente x-default e niente rimando a sé');
+  // B3 (probes simulate)
+  const pr = (o) => ({ http: { ok: true, hops: [], finalUrl: 'https://e.it/' }, www: { ok: false, hops: [], finalUrl: '', variant: 'www.e.it' }, chain: { ok: true, hops: [], finalUrl: 'https://e.it/p' }, ...o });
+  ok(by(seo({ probes: pr({}) }), 'Da http').status === 'good', 'seo B3: http→https = good');
+  ok(by(seo({ probes: pr({ http: { ok: true, hops: [], finalUrl: 'http://e.it/' } }) }), 'Da http').status === 'crit', 'seo B3: http che resta http = crit');
+  ok(by(seo({ probes: pr({ chain: { ok: true, hops: [{ url: 'a' }, { url: 'b' }], finalUrl: 'c' } }) }), 'Catena').status === 'warn', 'seo B3: 2 salti = warn');
+  ok(by(seo({ probes: pr({}) }), 'Variante www').status === 'info', 'seo B3: www che non risolve = info, non errore');
+  ok(by(seo({ probes: pr({ www: { ok: true, finalUrl: 'https://www.e.it/', variant: 'www.e.it' } }) }), 'Variante www').status === 'warn', 'seo B3: www servito su host diverso = warn');
+  ok(by(seo({ probes: pr({ www: { ok: true, finalUrl: 'https://e.it/', variant: 'www.e.it' } }) }), 'Variante www').status === 'good', 'seo B3: www che rimanda al principale = good');
+  const hdrAll = { 'Strict-Transport-Security': 'max-age=1', 'Content-Security-Policy': "default-src 'self'", 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
+  ok(by(seo({ headers: hdrAll }), 'Header di sicurezza').status === 'good', 'seo B3: 4 header = good');
+  const hmiss = by(seo({ headers: { 'X-Content-Type-Options': 'sniff' } }), 'Header di sicurezza');
+  ok(hmiss.status === 'warn' && /HSTS/.test(hmiss.detail) && /X-Content-Type-Options/.test(hmiss.detail), 'seo B3: header mancanti elencati');
+  ok(!by(seo({}), 'Header di sicurezza'), 'seo B3: senza header (snapshot) il check è omesso');
+  // B4
+  const ld = (j) => `<script type="application/ld+json">${j}</script>`;
+  ok(by(seo({ html: ld('{"@type":"Organization",') }), 'JSON-LD: sintassi').status === 'crit', 'seo B4: JSON-LD rotto = crit');
+  ok(by(seo({ html: ld('{"@type":"Organization","name":"X","url":"https://e.it"}') }), 'JSON-LD: proprietà').status === 'good', 'seo B4: Organization completa = good');
+  const lp = by(seo({ html: ld('{"@graph":[{"@type":"Article","headline":"h"},{"@type":"WebSite","name":"n","url":"u"}]}') }), 'JSON-LD: proprietà');
+  ok(lp.status === 'warn' && /Article: image, datePublished, author/.test(lp.detail) && !/WebSite/.test(lp.detail), 'seo B4: proprietà mancanti dentro @graph');
+  ok(!by(seo({}), 'JSON-LD: sintassi'), 'seo B4: senza JSON-LD i check non compaiono');
+  const og4 = '<meta property="og:title" content="t"><meta property="og:description" content="d"><meta property="og:image" content="i"><meta property="og:url" content="u">';
+  ok(by(seo({ html: og4 }), 'Open Graph').status === 'info', 'seo B4: OG completo senza image:alt = info (consiglio)');
+  ok(by(seo({ html: og4 + '<meta property="og:image:alt" content="a">' }), 'Open Graph').status === 'good', 'seo B4: OG completo = good');
+  ok(/og:image/.test(by(seo({ html: '<meta property="og:title" content="t">' }), 'Open Graph').detail), 'seo B4: OG incompleto elenca i mancanti');
+  {
+    // safeFetch.hops e traceRedirects: fetch simulato su IP pubblico letterale (niente DNS né rete).
+    const realF = globalThis.fetch;
+    const R = { 'http://93.184.216.34/': [301, 'https://93.184.216.34/'], 'https://93.184.216.34/': [302, 'https://93.184.216.34/it'], 'https://93.184.216.34/it': [200, null] };
+    globalThis.fetch = async (u) => { const [status, loc] = R[u]; return new Response('', { status, headers: loc ? { location: loc } : {} }); };
+    try {
+      const tr = await traceRedirects('http://93.184.216.34/');
+      ok(tr.ok && tr.hops.length === 2 && tr.hops[0].status === 301 && tr.finalUrl.endsWith('/it'), 'seo B3: traceRedirects conta i salti via safeFetch');
+      const zero = await traceRedirects('https://93.184.216.34/it');
+      ok(zero.ok && zero.hops.length === 0, 'seo B3: nessun salto = hops vuoto');
+      ok((await traceRedirects('http://127.0.0.1/')).ok === false, 'seo B3: IP interno bloccato dal guard anche nella sonda');
+    } finally { globalThis.fetch = realF; }
+  }
+  ok(by(analyzeTech({ https: true, noindex: false, viewport: true, statusOk: true, seo: { robotsOk: true, robotsTxt: '', finalUrl: 'https://e.it/', html: '', headers: null, probes: null } }, 'en'), 'Canonical').detail.length > 0, 'seo: i18n en');
 }
 {
   // agentReady — informativa per scelta: nessuna evidenza che questi segnali correlino
@@ -1318,7 +1400,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
   // Chiave presente ma testo italiano copiato: answerability e agentReady sono arrivati
   // così in 5 lingue senza che il controllo sulle chiavi se ne accorgesse.
   // Ammessi uguali all'italiano solo sigle, codice (remedy.*) e parole identiche nella lingua.
-  const UGUALI_OK = /^(remedy\.|axe\.nd$|suite\.card\.nd$|report\.date$|structured\.(meta\.name|signals\.detail)$|rights\.(signal\.name|tdmrep\.name|tdmrep\.detail\.ok)$|tech\.(https\.name|status\.detail\.ok|viewport\.name|viewport\.detail\.ok)$|a11y\.headings\.detail$|agentFiles\.llms\.detail\.ok$|agentReady\.(usage|botauth)\.name$)/;
+  const UGUALI_OK = /^(remedy\.|axe\.nd$|suite\.card\.nd$|report\.date$|structured\.(meta\.name|signals\.detail)$|rights\.(signal\.name|tdmrep\.name|tdmrep\.detail\.ok)$|tech\.(https\.name|status\.detail\.ok|viewport\.name|viewport\.detail\.ok|canonical\.name|hreflang\.name|og\.name)$|a11y\.headings\.detail$|agentFiles\.llms\.detail\.ok$|agentReady\.(usage|botauth)\.name$)/;
   for (const lang of ['en', 'de', 'fr', 'es', 'pt']) {
     const copiati = dizionari.it.filter((k) => !UGUALI_OK.test(k) && DIZ[lang][k] === DIZ_IT[k]);
     ok(copiati.length === 0, `catalogo ${lang}: nessun testo copiato dall'italiano (${copiati.slice(0, 5).join(',') || 'nessuno'})`);

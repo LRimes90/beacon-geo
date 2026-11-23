@@ -123,6 +123,21 @@ export async function head(url, { ua = BROWSER_UA, timeout = 8000 } = {}) {
   finally { clearTimeout(timer); }
 }
 
+// Catena di redirect dell'URL: { ok, hops:[{url,status}], finalUrl }. Passa da safeFetch
+// (unico punto di controllo SSRF); timeout totale breve (default 5 s) a gara.
+export async function traceRedirects(url, { timeout = 5000, maxHops = 6 } = {}) {
+  const ctrl = new AbortController();
+  const fail = { ok: false, hops: [], finalUrl: url };
+  const work = safeFetch(url, { maxRedirects: maxHops, headers: { 'User-Agent': BROWSER_UA }, signal: ctrl.signal })
+    .then(async ({ res, finalUrl, hops }) => {
+      try { await res.body?.cancel(); } catch { /* corpo non letto: ok */ }
+      return { ok: res.status < 400, hops, finalUrl };
+    }).catch(() => fail);
+  let timer;
+  const limit = new Promise((r) => { timer = setTimeout(() => { ctrl.abort(); r(fail); }, timeout); });
+  try { return await Promise.race([work, limit]); } finally { clearTimeout(timer); }
+}
+
 // ---------- HTML helpers (funzioni pure) ----------
 export function getTitle(html) {
   const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -132,10 +147,19 @@ export function getMeta(html, name) {
   // Il delimitatore va catturato e richiuso con backreference: con [^"']* un apostrofo
   // dentro content troncava il valore (in italiano dell'/l'/un' sono ovunque) → description
   // "troppo corta" e structured penalizzato su tutti i siti italiani.
-  const a = html.match(new RegExp('<meta[^>]+(?:name|property)=["\\\']' + name + '["\\\'][^>]*?content=(["\\\'])([\\s\\S]*?)\\1', 'i'));
-  if (a) return a[2];
-  const b = html.match(new RegExp('<meta[^>]+content=(["\\\'])([\\s\\S]*?)\\1[^>]*?(?:name|property)=["\\\']' + name + '["\\\']', 'i'));
-  return b ? b[2] : null;
+  // Lineare su HTML ostile (fino a 3 MB): prima il tag intero, con i valori tra virgolette che
+  // possono contenere < e >, poi gli attributi dentro il tag. La vecchia regex unica con
+  // [^>]+ ... [\s\S]*? era quadratica: 200 KB di "<meta" ripetuto = 15 s di processo bloccato.
+  const want = name.toLowerCase();
+  for (const m of html.matchAll(/<meta\b((?:[^<>"']|"[^"]*"|'[^']*')*)>/gi)) {
+    const a = {};
+    for (const x of m[1].matchAll(/(?<![a-zA-Z:-])([a-zA-Z:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g)) {
+      const k = x[1].toLowerCase();
+      if (!(k in a)) a[k] = x[2] ?? x[3] ?? x[4] ?? '';
+    }
+    if (a.content !== undefined && [a.name, a.property].some((v) => (v || '').toLowerCase() === want)) return a.content;
+  }
+  return null;
 }
 export function has(html, re) { return re.test(html); }
 export function count(html, re) { const m = html.match(re); return m ? m.length : 0; }
